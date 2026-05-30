@@ -1,0 +1,2 @@
+This is a small fixture note.
+It exists so Comber can test plain text extraction.

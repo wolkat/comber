@@ -1,0 +1,6 @@
+# Pipeline outputs (regenerable)
+outputs/
+
+# OS files
+.DS_Store
+Thumbs.db

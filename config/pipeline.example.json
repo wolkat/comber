@@ -1,0 +1,103 @@
+{
+  "archiveRoots": [
+    "./tests/fixtures/source"
+  ],
+  "outputPath": "./outputs",
+  "privacyMode": "local-first",
+  "ocrLanguages": [
+    "eng"
+  ],
+  "exclusions": {
+    "pathGlobs": [
+      "**/.git/**",
+      "**/node_modules/**",
+      "**/.cache/**",
+      "**/outputs/**",
+      "**/System Volume Information/**",
+      "**/$RECYCLE.BIN/**",
+      "**/.Trash/**"
+    ],
+    "extensions": [
+      ".tmp",
+      ".part",
+      ".crdownload"
+    ]
+  },
+  "inventory": {
+    "hashAlgorithm": "SHA256",
+    "hashMaxBytes": 0,
+    "progressEvery": 250
+  },
+  "metadata": {
+    "enableExifTool": true,
+    "exifToolJson": {
+      "command": "exiftool",
+      "arguments": [
+        "-j",
+        "-time:all",
+        "-s",
+        "{path}"
+      ]
+    }
+  },
+  "extraction": {
+    "maxInlineTextBytes": 5242880,
+    "enableExternalConverters": false,
+    "converters": {
+      "markitdown": {
+        "command": "markitdown",
+        "arguments": [
+          "{path}"
+        ]
+      },
+      "docling": {
+        "command": "docling",
+        "arguments": [
+          "{path}"
+        ]
+      },
+      "tesseract": {
+        "command": "tesseract",
+        "arguments": [
+          "{path}",
+          "stdout",
+          "-l",
+          "{ocrLanguages}"
+        ]
+      }
+    }
+  },
+  "transcription": {
+    "enabled": false,
+    "engine": "whisper",
+    "commandTemplate": {
+      "command": "whisper",
+      "arguments": [
+        "{path}",
+        "--model",
+        "base",
+        "--output_format",
+        "txt"
+      ]
+    }
+  },
+  "classification": {
+    "enabled": false,
+    "provider": "ollama",
+    "model": "qwen3:4b",
+    "maxChars": 6000
+  },
+  "knowledgeBase": {
+    "vaultName": "archive-vault",
+    "copyOriginals": false
+  },
+  "actions": {
+    "enableApplyReviewedActions": false,
+    "quarantinePath": "./outputs/quarantine"
+  },
+  "safety": {
+    "allowOutputInsideRoot": false,
+    "allowDelete": false,
+    "requireApprovedManifest": true
+  }
+}

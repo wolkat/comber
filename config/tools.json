@@ -1,0 +1,76 @@
+{
+  "required": [
+    {
+      "name": "PowerShell 7",
+      "command": "pwsh",
+      "windows": "winget install Microsoft.PowerShell",
+      "macos": "brew install --cask powershell",
+      "linux": "Install from Microsoft package repository for your distro."
+    },
+    {
+      "name": "Git",
+      "command": "git",
+      "windows": "winget install Git.Git",
+      "macos": "brew install git",
+      "linux": "Use your package manager, for example apt install git."
+    }
+  ],
+  "recommended": [
+    {
+      "name": "ExifTool",
+      "command": "exiftool",
+      "windows": "winget install OliverBetz.ExifTool",
+      "macos": "brew install exiftool",
+      "linux": "Use your package manager, for example apt install libimage-exiftool-perl."
+    },
+    {
+      "name": "FFmpeg",
+      "command": "ffmpeg",
+      "windows": "winget install Gyan.FFmpeg",
+      "macos": "brew install ffmpeg",
+      "linux": "Use your package manager, for example apt install ffmpeg."
+    },
+    {
+      "name": "ffprobe",
+      "command": "ffprobe",
+      "windows": "Installed with FFmpeg.",
+      "macos": "Installed with FFmpeg.",
+      "linux": "Installed with FFmpeg."
+    },
+    {
+      "name": "Tesseract",
+      "command": "tesseract",
+      "windows": "Install UB Mannheim Tesseract or use a trusted package manager.",
+      "macos": "brew install tesseract",
+      "linux": "Use your package manager, for example apt install tesseract-ocr."
+    },
+    {
+      "name": "Ollama",
+      "command": "ollama",
+      "windows": "Install from Ollama's Windows installer.",
+      "macos": "brew install ollama",
+      "linux": "Install from Ollama's Linux instructions."
+    },
+    {
+      "name": "Czkawka CLI",
+      "command": "czkawka_cli",
+      "windows": "Install a release build or package manager version.",
+      "macos": "Install a release build or package manager version.",
+      "linux": "Install a release build or package manager version."
+    },
+    {
+      "name": "MarkItDown",
+      "command": "markitdown",
+      "windows": "Install with Python tooling in a virtual environment.",
+      "macos": "Install with Python tooling in a virtual environment.",
+      "linux": "Install with Python tooling in a virtual environment."
+    },
+    {
+      "name": "Docling",
+      "command": "docling",
+      "windows": "Install with Python tooling in a virtual environment.",
+      "macos": "Install with Python tooling in a virtual environment.",
+      "linux": "Install with Python tooling in a virtual environment."
+    }
+  ]
+}
