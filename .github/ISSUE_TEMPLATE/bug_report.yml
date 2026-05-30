@@ -1,0 +1,50 @@
+name: Bug Report
+description: Report a problem with Comber
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Comber version / commit
+      description: What version or commit are you running?
+      placeholder: e.g. main@abc123 or v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: powershell
+    attributes:
+      label: PowerShell version
+      description: Output of `$PSVersionTable`
+      placeholder: e.g. 7.4.6
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: e.g. macOS 15.7, Windows 11, Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What happened? What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands and config used
+      placeholder: |
+        1. pwsh ./scripts/01-Inventory.ps1 -ConfigPath ...
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Check outputs/logs/ for the relevant log file
+      render: text

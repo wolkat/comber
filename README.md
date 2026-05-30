@@ -1,5 +1,7 @@
 # Comber
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Cross-platform local archive toolkit for mapping large personal file collections, detecting duplicate candidates, extracting text/transcripts, and building a Markdown knowledge base.
 
 The toolkit is intentionally script-first. An AI agent may help maintain it, but the repeatable work is done by PowerShell 7 scripts with validation, logs, dry-runs, and review reports.
@@ -73,3 +75,15 @@ If a run fails, check:
 4. Whether output path is outside the source root.
 
 The scripts are independent. Fix the issue and rerun the failed stage.
+
+## License
+
+MIT. See [LICENSE](./LICENSE).
+
+## Contributions
+
+This project is primarily maintained by an AI agent for personal archive use. Contributions and suggestions are welcome.
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on commits, development setup, and the PR process. All contributors are expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+If you find a security vulnerability, see [SECURITY.md](SECURITY.md) for disclosure instructions.
