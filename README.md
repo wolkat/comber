@@ -76,6 +76,18 @@ If a run fails, check:
 
 The scripts are independent. Fix the issue and rerun the failed stage.
 
+## Exit Codes
+
+All pipeline scripts follow a consistent exit code contract:
+
+| Code | Meaning | Action |
+|------|---------|--------|
+| `0` | Success | Proceed to next stage |
+| `1` | Fatal error | Check logs, fix issue, rerun this stage |
+| `3` | Partial success | Errors occurred but pipeline can continue; check error reports |
+
+The test harness (`Invoke-FixturePipeline.ps1`) accepts both `0` and `3` as valid exit codes.
+
 ## License
 
 This project is licensed under the [MIT License](LICENSE).

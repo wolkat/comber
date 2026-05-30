@@ -25,6 +25,13 @@ try {
     }
 
     $manifestPath = Resolve-ArchivePath -PathValue $ApprovedManifest -BasePath $run.ToolkitRoot
+
+    # Validate manifest has required columns before processing
+    $manifestCheck = Test-ArchiveCsvColumns -Path $manifestPath -RequiredColumns @("approved", "action", "path")
+    if (-not $manifestCheck.Valid) {
+        throw "Approved manifest is missing required columns: $($manifestCheck.Missing -join ', '). File: $manifestPath"
+    }
+
     $actions = @(Import-ArchiveCsv -Path $manifestPath)
     $quarantinePath = Resolve-ArchivePath -PathValue ([string]$run.Config.actions.quarantinePath) -BasePath $run.ToolkitRoot
     Ensure-ArchiveDirectory -Path $quarantinePath

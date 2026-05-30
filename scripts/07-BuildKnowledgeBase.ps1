@@ -29,6 +29,12 @@ try {
     $classPath = Join-Path $run.OutputPath "classification/classification.csv"
     $dedupePath = Join-Path $run.OutputPath "reports/exact-duplicates.csv"
 
+    # Validate inventory has required columns
+    $inventoryCheck = Test-ArchiveCsvColumns -Path (Join-Path $run.OutputPath "inventory/inventory.csv") -RequiredColumns @("path", "category", "hash")
+    if (-not $inventoryCheck.Valid) {
+        throw "Inventory CSV is missing required columns: $($inventoryCheck.Missing -join ', ')"
+    }
+
     $metadata = if (Test-Path -LiteralPath $metadataPath) { @(Import-ArchiveCsv -Path $metadataPath) } else { @() }
     $extract = if (Test-Path -LiteralPath $extractPath) { @(Import-ArchiveCsv -Path $extractPath) } else { @() }
     $classification = if (Test-Path -LiteralPath $classPath) { @(Import-ArchiveCsv -Path $classPath) } else { @() }

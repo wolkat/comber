@@ -66,6 +66,28 @@ function Ensure-ArchiveDirectory {
     }
 }
 
+function Test-ArchiveSystemPath {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $systemDirs = @(
+        # Linux/Unix
+        "/etc", "/var", "/usr", "/bin", "/sbin", "/proc", "/sys", "/boot", "/dev", "/run", "/tmp",
+        # macOS
+        "/System", "/Library", "/Applications",
+        # Windows (common roots)
+        "C:\Windows", "C:\Program Files", "C:\Program Files (x86)"
+    )
+
+    $normalized = [System.IO.Path]::GetFullPath($Path).TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar)
+
+    foreach ($dir in $systemDirs) {
+        if ($normalized -eq $dir -or $normalized.StartsWith($dir + [System.IO.Path]::DirectorySeparatorChar)) {
+            return $true
+        }
+    }
+    return $false
+}
+
 function New-ArchiveRun {
     param(
         [Parameter(Mandatory = $true)][string]$ScriptName,
@@ -73,12 +95,21 @@ function New-ArchiveRun {
         [string]$RootPath,
         [string]$OutputPath,
         [switch]$VerboseLog,
-        [switch]$AllowMissingRoot
+        [switch]$AllowMissingRoot,
+        [switch]$AllowSystemRoot
     )
 
     $toolkitRoot = Get-ArchiveToolkitRoot
     $configInfo = Read-ArchiveConfig -ConfigPath $ConfigPath
     $config = $configInfo.Data
+
+    # Ensure config sections exist with safe defaults
+    $requiredSections = @("inventory", "metadata", "extraction", "transcription", "classification", "knowledgeBase", "actions", "safety")
+    foreach ($section in $requiredSections) {
+        if (-not ($config.PSObject.Properties.Name -contains $section) -or $null -eq $config.$section) {
+            $config | Add-Member -NotePropertyName $section -NotePropertyValue ([pscustomobject]@{}) -Force
+        }
+    }
 
     $rootCandidate = $RootPath
     if ([string]::IsNullOrWhiteSpace($rootCandidate)) {
@@ -96,6 +127,9 @@ function New-ArchiveRun {
         $resolvedRoot = Resolve-ArchivePath -PathValue $rootCandidate -BasePath $toolkitRoot
         if ((-not $AllowMissingRoot) -and (-not (Test-Path -LiteralPath $resolvedRoot -PathType Container))) {
             throw "Root path does not exist: $resolvedRoot"
+        }
+        if ((-not $AllowSystemRoot) -and (Test-ArchiveSystemPath -Path $resolvedRoot)) {
+            throw "Root path appears to be a system directory: $resolvedRoot. Use -AllowSystemRoot to override."
         }
     }
 
@@ -187,6 +221,27 @@ function Import-ArchiveCsv {
     }
 
     return Import-Csv -LiteralPath $Path
+}
+
+function Test-ArchiveCsvColumns {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string[]]$RequiredColumns
+    )
+
+    $rows = @(Import-ArchiveCsv -Path $Path)
+    if ($rows.Count -eq 0) {
+        return [pscustomobject]@{ Valid = $true; Missing = @(); RowCount = 0 }
+    }
+
+    $actualColumns = @($rows[0].PSObject.Properties.Name)
+    $missing = @($RequiredColumns | Where-Object { $_ -notin $actualColumns })
+
+    return [pscustomobject]@{
+        Valid = $missing.Count -eq 0
+        Missing = $missing
+        RowCount = $rows.Count
+    }
 }
 
 function Test-ArchiveCommand {

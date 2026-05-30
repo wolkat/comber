@@ -21,6 +21,14 @@ try {
     $hashMaxBytes = if ($run.Config.inventory.hashMaxBytes -ne $null) { [int64]$run.Config.inventory.hashMaxBytes } else { 0 }
     $progressEvery = if ($run.Config.inventory.progressEvery) { [int]$run.Config.inventory.progressEvery } else { 250 }
 
+    # Validate hash algorithm is available
+    try {
+        $null = Get-FileHash -InputStream ([System.IO.MemoryStream]::new([System.Text.Encoding]::UTF8.GetBytes("test"))) -Algorithm $algorithm -ErrorAction Stop
+    }
+    catch {
+        throw "Hash algorithm '$algorithm' is not available on this system. Check your config and installed algorithms."
+    }
+
     $rows = New-Object System.Collections.Generic.List[object]
     $errors = New-Object System.Collections.Generic.List[object]
     foreach ($err in $scan.Errors) { $errors.Add($err) }
