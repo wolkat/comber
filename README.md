@@ -78,7 +78,7 @@ The scripts are independent. Fix the issue and rerun the failed stage.
 
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+This project is licensed under the [MIT License](LICENSE).
 
 ## Contributions
 
