@@ -58,8 +58,13 @@ try {
                 $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "dry_run"; message = "Would move to $destination" })
             }
             else {
-                Move-Item -LiteralPath $row.path -Destination $destination -ErrorAction Stop
-                $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "moved"; message = $destination })
+                try {
+                    Move-Item -LiteralPath $row.path -Destination $destination -ErrorAction Stop
+                    $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "moved"; message = $destination })
+                }
+                catch {
+                    $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "error"; message = $_.Exception.Message })
+                }
             }
         }
         elseif ($row.action -eq "delete") {
@@ -73,8 +78,13 @@ try {
                 $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "dry_run"; message = "Would delete." })
             }
             else {
-                Remove-Item -LiteralPath $row.path -ErrorAction Stop
-                $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "deleted"; message = "" })
+                try {
+                    Remove-Item -LiteralPath $row.path -ErrorAction Stop
+                    $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "deleted"; message = "" })
+                }
+                catch {
+                    $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "error"; message = $_.Exception.Message })
+                }
             }
         }
         else {

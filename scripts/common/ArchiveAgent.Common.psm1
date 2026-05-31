@@ -231,7 +231,12 @@ function Test-ArchiveCsvColumns {
 
     $rows = @(Import-ArchiveCsv -Path $Path)
     if ($rows.Count -eq 0) {
-        return [pscustomobject]@{ Valid = $true; Missing = @(); RowCount = 0 }
+        return [pscustomobject]@{
+            Valid = $RequiredColumns.Count -eq 0
+            Missing = if ($RequiredColumns.Count -gt 0) { @("no_rows") } else { @() }
+            RowCount = 0
+            Note = if ($RequiredColumns.Count -gt 0) { "CSV is empty - cannot verify required columns: $($RequiredColumns -join ', ')" } else { "" }
+        }
     }
 
     $actualColumns = @($rows[0].PSObject.Properties.Name)

@@ -28,7 +28,12 @@ function Get-HeuristicTags {
 
 try {
     $run = New-ArchiveRun -ScriptName "06-ClassifyThemes" -ConfigPath $ConfigPath -RootPath $RootPath -OutputPath $OutputPath -VerboseLog:$VerboseLog
-    $inventory = @(Import-ArchiveCsv -Path (Join-Path $run.OutputPath "inventory/inventory.csv"))
+    $inventoryPath = Join-Path $run.OutputPath "inventory/inventory.csv"
+    $invCheck = Test-ArchiveCsvColumns -Path $inventoryPath -RequiredColumns @("path", "category", "name", "extension")
+    if (-not $invCheck.Valid) {
+        throw "Inventory CSV is missing required columns for classification stage: $($invCheck.Missing -join ', ')"
+    }
+    $inventory = @(Import-ArchiveCsv -Path $inventoryPath)
     $modelEnabled = $run.Config.classification -and [bool]$run.Config.classification.enabled
     $rows = New-Object System.Collections.Generic.List[object]
 

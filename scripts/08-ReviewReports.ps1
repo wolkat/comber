@@ -13,6 +13,10 @@ Import-Module (Join-Path $PSScriptRoot "common/ArchiveAgent.Common.psm1") -Force
 
 try {
     $run = New-ArchiveRun -ScriptName "08-ReviewReports" -ConfigPath $ConfigPath -RootPath $RootPath -OutputPath $OutputPath -VerboseLog:$VerboseLog
+    $inventoryPathCheck = Test-ArchiveCsvColumns -Path (Join-Path $run.OutputPath "inventory/inventory.csv") -RequiredColumns @("path")
+    if (-not $inventoryPathCheck.Valid) {
+        throw "Inventory CSV is missing required columns for review stage: $($inventoryPathCheck.Missing -join ', ')"
+    }
     $inventory = @(Import-ArchiveCsv -Path (Join-Path $run.OutputPath "inventory/inventory.csv"))
 
     $exactPath = Join-Path $run.OutputPath "reports/exact-duplicates.csv"
@@ -54,7 +58,8 @@ try {
 
     if (-not $DryRun) {
         $summary | Set-Content -LiteralPath (Join-Path $run.OutputPath "reports/review-summary.md") -Encoding UTF8
-        Export-ArchiveCsv -Rows @($actionRows) -Path (Join-Path $run.OutputPath "reports/actions-template.csv")
+        $actionRows = @($actionRows | Where-Object { $_ -ne $null })
+        Export-ArchiveCsv -Rows $actionRows -Path (Join-Path $run.OutputPath "reports/actions-template.csv")
     }
 
     Write-ArchiveLog -Run $run -Message "Review summary generated"

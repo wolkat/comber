@@ -13,7 +13,12 @@ Import-Module (Join-Path $PSScriptRoot "common/ArchiveAgent.Common.psm1") -Force
 
 try {
     $run = New-ArchiveRun -ScriptName "03-Dedupe" -ConfigPath $ConfigPath -RootPath $RootPath -OutputPath $OutputPath -VerboseLog:$VerboseLog
-    $inventory = @(Import-ArchiveCsv -Path (Join-Path $run.OutputPath "inventory/inventory.csv"))
+    $inventoryPath = Join-Path $run.OutputPath "inventory/inventory.csv"
+    $invCheck = Test-ArchiveCsvColumns -Path $inventoryPath -RequiredColumns @("path", "hash", "hash_status", "length_bytes")
+    if (-not $invCheck.Valid) {
+        throw "Inventory CSV is missing required columns for dedupe stage: $($invCheck.Missing -join ', ')"
+    }
+    $inventory = @(Import-ArchiveCsv -Path $inventoryPath)
     $hashed = @($inventory | Where-Object { $_.hash_status -eq "ok" -and -not [string]::IsNullOrWhiteSpace($_.hash) })
 
     $duplicateRows = New-Object System.Collections.Generic.List[object]

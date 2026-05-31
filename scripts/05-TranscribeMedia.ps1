@@ -13,7 +13,12 @@ Import-Module (Join-Path $PSScriptRoot "common/ArchiveAgent.Common.psm1") -Force
 
 try {
     $run = New-ArchiveRun -ScriptName "05-TranscribeMedia" -ConfigPath $ConfigPath -RootPath $RootPath -OutputPath $OutputPath -VerboseLog:$VerboseLog
-    $inventory = @(Import-ArchiveCsv -Path (Join-Path $run.OutputPath "inventory/inventory.csv"))
+    $inventoryPath = Join-Path $run.OutputPath "inventory/inventory.csv"
+    $invCheck = Test-ArchiveCsvColumns -Path $inventoryPath -RequiredColumns @("path", "category", "name")
+    if (-not $invCheck.Valid) {
+        throw "Inventory CSV is missing required columns for transcription stage: $($invCheck.Missing -join ', ')"
+    }
+    $inventory = @(Import-ArchiveCsv -Path $inventoryPath)
     $media = @($inventory | Where-Object { $_.category -in @("audio", "video") })
     $enabled = $run.Config.transcription -and [bool]$run.Config.transcription.enabled
     $rows = New-Object System.Collections.Generic.List[object]

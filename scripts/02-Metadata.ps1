@@ -35,6 +35,10 @@ function Select-BestDate {
 try {
     $run = New-ArchiveRun -ScriptName "02-Metadata" -ConfigPath $ConfigPath -RootPath $RootPath -OutputPath $OutputPath -VerboseLog:$VerboseLog
     $inventoryPath = Join-Path $run.OutputPath "inventory/inventory.csv"
+    $invCheck = Test-ArchiveCsvColumns -Path $inventoryPath -RequiredColumns @("path", "category", "name", "modified_utc", "created_utc")
+    if (-not $invCheck.Valid) {
+        throw "Inventory CSV is missing required columns for metadata stage: $($invCheck.Missing -join ', ')"
+    }
     $inventory = @(Import-ArchiveCsv -Path $inventoryPath)
     $rows = New-Object System.Collections.Generic.List[object]
     $errors = New-Object System.Collections.Generic.List[object]

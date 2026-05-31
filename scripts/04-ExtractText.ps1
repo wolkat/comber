@@ -42,7 +42,12 @@ function Write-ExtractedMarkdown {
 
 try {
     $run = New-ArchiveRun -ScriptName "04-ExtractText" -ConfigPath $ConfigPath -RootPath $RootPath -OutputPath $OutputPath -VerboseLog:$VerboseLog
-    $inventory = @(Import-ArchiveCsv -Path (Join-Path $run.OutputPath "inventory/inventory.csv"))
+    $inventoryPath = Join-Path $run.OutputPath "inventory/inventory.csv"
+    $invCheck = Test-ArchiveCsvColumns -Path $inventoryPath -RequiredColumns @("path", "category", "name", "extension", "length_bytes")
+    if (-not $invCheck.Valid) {
+        throw "Inventory CSV is missing required columns for extraction stage: $($invCheck.Missing -join ', ')"
+    }
+    $inventory = @(Import-ArchiveCsv -Path $inventoryPath)
     $maxBytes = if ($run.Config.extraction.maxInlineTextBytes) { [int64]$run.Config.extraction.maxInlineTextBytes } else { 5242880 }
     $enableExternal = $run.Config.extraction -and [bool]$run.Config.extraction.enableExternalConverters
     $rows = New-Object System.Collections.Generic.List[object]
