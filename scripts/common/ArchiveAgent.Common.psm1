@@ -1,5 +1,69 @@
 Set-StrictMode -Version Latest
 
+# Error categories for structured error handling
+enum ArchiveErrorCategory {
+    ConfigError
+    PathError
+    FileError
+    HashError
+    CsvError
+    ToolError
+    ValidationError
+    PermissionError
+    TransientError
+}
+
+function New-ArchiveError {
+    param(
+        [Parameter(Mandatory = $true)][ArchiveErrorCategory]$Category,
+        [Parameter(Mandatory = $true)][string]$Message,
+        [string]$Path = "",
+        [string]$Stage = "",
+        [object]$OriginalError = $null,
+        [bool]$Recoverable = $false
+    )
+
+    return [pscustomobject]@{
+        Category = $Category.ToString()
+        Message = $Message
+        Path = $Path
+        Stage = $Stage
+        Timestamp = Get-Date -Format "o"
+        Recoverable = $Recoverable
+        OriginalError = if ($OriginalError) { $OriginalError.ToString() } else { "" }
+    }
+}
+
+function Invoke-ArchiveRetry {
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$ScriptBlock,
+        [int]$MaxRetries = 3,
+        [int]$DelayMs = 100,
+        [string]$OperationName = "operation"
+    )
+
+    $attempt = 0
+    while ($true) {
+        $attempt++
+        try {
+            return & $ScriptBlock
+        }
+        catch {
+            $isTransient = $_.Exception.Message -match "being used by another process" -or
+                           $_.Exception.Message -match "access denied" -or
+                           $_.Exception.Message -match "sharing violation" -or
+                           $_.Exception.Message -match "network path"
+
+            if ($attempt -ge $MaxRetries -or -not $isTransient) {
+                throw (New-ArchiveError -Category ([ArchiveErrorCategory]::TransientError) -Message "Failed after $attempt attempts: $OperationName. $($_.Exception.Message)" -OriginalError $_.Exception -Recoverable $isTransient)
+            }
+
+            Start-Sleep -Milliseconds ($DelayMs * $attempt)
+            Write-Warning "Retry $attempt/$MaxRetries for $OperationName after transient error"
+        }
+    }
+}
+
 function Get-ArchiveToolkitRoot {
     $root = Join-Path $PSScriptRoot "../.."
     return (Resolve-Path -LiteralPath $root).Path
@@ -29,7 +93,7 @@ function Read-ArchiveConfig {
 
     $resolved = Resolve-ArchivePath -PathValue $ConfigPath -BasePath $toolkitRoot
     if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
-        throw "Config file not found: $resolved"
+        throw (New-ArchiveError -Category ([ArchiveErrorCategory]::ConfigError) -Message "Config file not found: $resolved" -Path $resolved)
     }
 
     try {
@@ -41,7 +105,137 @@ function Read-ArchiveConfig {
         }
     }
     catch {
-        throw "Config file is not valid JSON: $resolved. $($_.Exception.Message)"
+        throw (New-ArchiveError -Category ([ArchiveErrorCategory]::ConfigError) -Message "Config file is not valid JSON: $resolved. $($_.Exception.Message)" -Path $resolved -OriginalError $_.Exception)
+    }
+}
+
+function Test-ArchiveConfigSchema {
+    param(
+        [Parameter(Mandatory = $true)]$Config,
+        [string]$ConfigPath = ""
+    )
+
+    $errors = @()
+    $warnings = @()
+
+    # Required top-level sections
+    $requiredSections = @("archiveRoots", "outputPath", "inventory", "metadata", "extraction", "transcription", "classification", "knowledgeBase", "actions", "safety")
+    foreach ($section in $requiredSections) {
+        if (-not ($Config.PSObject.Properties.Name -contains $section)) {
+            $errors += "Missing required section: $section"
+        }
+    }
+
+    # Validate archiveRoots
+    if ($Config.PSObject.Properties.Name -contains "archiveRoots" -and $Config.archiveRoots) {
+        if (-not ($Config.archiveRoots -is [array])) {
+            $errors += "archiveRoots must be an array"
+        }
+        elseif ($Config.archiveRoots.Count -eq 0) {
+            $warnings += "archiveRoots is empty"
+        }
+    }
+
+    # Validate outputPath
+    if ($Config.PSObject.Properties.Name -contains "outputPath" -and $Config.outputPath -and -not ($Config.outputPath -is [string])) {
+        $errors += "outputPath must be a string"
+    }
+
+    # Validate inventory section
+    if ($Config.PSObject.Properties.Name -contains "inventory" -and $Config.inventory) {
+        if ($Config.inventory.PSObject.Properties.Name -contains "hashAlgorithm" -and $Config.inventory.hashAlgorithm -and $Config.inventory.hashAlgorithm -notin @("SHA1", "SHA256", "SHA384", "SHA512", "MD5")) {
+            $errors += "inventory.hashAlgorithm must be one of: SHA1, SHA256, SHA384, SHA512, MD5"
+        }
+        if ($Config.inventory.PSObject.Properties.Name -contains "hashMaxBytes" -and $Config.inventory.hashMaxBytes -lt 0) {
+            $errors += "inventory.hashMaxBytes must be non-negative"
+        }
+        if ($Config.inventory.PSObject.Properties.Name -contains "progressEvery" -and $Config.inventory.progressEvery -lt 1) {
+            $errors += "inventory.progressEvery must be positive"
+        }
+    }
+
+    # Validate metadata section
+    if ($Config.PSObject.Properties.Name -contains "metadata" -and $Config.metadata) {
+        if ($Config.metadata.PSObject.Properties.Name -contains "enableExifTool" -and $Config.metadata.enableExifTool -and -not ($Config.metadata.enableExifTool -is [bool])) {
+            $errors += "metadata.enableExifTool must be a boolean"
+        }
+    }
+
+    # Validate extraction section
+    if ($Config.PSObject.Properties.Name -contains "extraction" -and $Config.extraction) {
+        if ($Config.extraction.PSObject.Properties.Name -contains "maxInlineTextBytes" -and $Config.extraction.maxInlineTextBytes -lt 0) {
+            $errors += "extraction.maxInlineTextBytes must be non-negative"
+        }
+        if ($Config.extraction.PSObject.Properties.Name -contains "enableExternalConverters" -and $Config.extraction.enableExternalConverters -and -not ($Config.extraction.enableExternalConverters -is [bool])) {
+            $errors += "extraction.enableExternalConverters must be a boolean"
+        }
+    }
+
+    # Validate transcription section
+    if ($Config.PSObject.Properties.Name -contains "transcription" -and $Config.transcription) {
+        if ($Config.transcription.PSObject.Properties.Name -contains "enabled" -and $Config.transcription.enabled -and -not ($Config.transcription.enabled -is [bool])) {
+            $errors += "transcription.enabled must be a boolean"
+        }
+        if ($Config.transcription.PSObject.Properties.Name -contains "enabled" -and $Config.transcription.enabled -and -not ($Config.transcription.PSObject.Properties.Name -contains "commandTemplate" -and $Config.transcription.commandTemplate)) {
+            $errors += "transcription.commandTemplate is required when transcription is enabled"
+        }
+    }
+
+    # Validate classification section
+    if ($Config.PSObject.Properties.Name -contains "classification" -and $Config.classification) {
+        if ($Config.classification.PSObject.Properties.Name -contains "enabled" -and $Config.classification.enabled -and -not ($Config.classification.enabled -is [bool])) {
+            $errors += "classification.enabled must be a boolean"
+        }
+        if ($Config.classification.PSObject.Properties.Name -contains "maxChars" -and $Config.classification.maxChars -lt 1) {
+            $errors += "classification.maxChars must be positive"
+        }
+    }
+
+    # Validate knowledgeBase section
+    if ($Config.PSObject.Properties.Name -contains "knowledgeBase" -and $Config.knowledgeBase) {
+        if ($Config.knowledgeBase.PSObject.Properties.Name -contains "vaultName" -and $Config.knowledgeBase.vaultName -and -not ($Config.knowledgeBase.vaultName -is [string])) {
+            $errors += "knowledgeBase.vaultName must be a string"
+        }
+        if ($Config.knowledgeBase.PSObject.Properties.Name -contains "copyOriginals" -and $Config.knowledgeBase.copyOriginals -and -not ($Config.knowledgeBase.copyOriginals -is [bool])) {
+            $errors += "knowledgeBase.copyOriginals must be a boolean"
+        }
+    }
+
+    # Validate actions section
+    if ($Config.PSObject.Properties.Name -contains "actions" -and $Config.actions) {
+        if ($Config.actions.PSObject.Properties.Name -contains "enableApplyReviewedActions" -and $Config.actions.enableApplyReviewedActions -and -not ($Config.actions.enableApplyReviewedActions -is [bool])) {
+            $errors += "actions.enableApplyReviewedActions must be a boolean"
+        }
+    }
+
+    # Validate safety section
+    if ($Config.PSObject.Properties.Name -contains "safety" -and $Config.safety) {
+        if ($Config.safety.PSObject.Properties.Name -contains "allowOutputInsideRoot" -and $Config.safety.allowOutputInsideRoot -and -not ($Config.safety.allowOutputInsideRoot -is [bool])) {
+            $errors += "safety.allowOutputInsideRoot must be a boolean"
+        }
+        if ($Config.safety.PSObject.Properties.Name -contains "allowDelete" -and $Config.safety.allowDelete -and -not ($Config.safety.allowDelete -is [bool])) {
+            $errors += "safety.allowDelete must be a boolean"
+        }
+        if ($Config.safety.PSObject.Properties.Name -contains "requireApprovedManifest" -and $Config.safety.requireApprovedManifest -and -not ($Config.safety.requireApprovedManifest -is [bool])) {
+            $errors += "safety.requireApprovedManifest must be a boolean"
+        }
+    }
+
+    # Validate exclusions section
+    if ($Config.PSObject.Properties.Name -contains "exclusions" -and $Config.exclusions) {
+        if ($Config.exclusions.PSObject.Properties.Name -contains "pathGlobs" -and $Config.exclusions.pathGlobs -and -not ($Config.exclusions.pathGlobs -is [array])) {
+            $errors += "exclusions.pathGlobs must be an array"
+        }
+        if ($Config.exclusions.PSObject.Properties.Name -contains "extensions" -and $Config.exclusions.extensions -and -not ($Config.exclusions.extensions -is [array])) {
+            $errors += "exclusions.extensions must be an array"
+        }
+    }
+
+    return [pscustomobject]@{
+        Valid = $errors.Count -eq 0
+        Errors = $errors
+        Warnings = $warnings
+        ConfigPath = $ConfigPath
     }
 }
 
@@ -119,17 +313,17 @@ function New-ArchiveRun {
     }
 
     if ([string]::IsNullOrWhiteSpace($rootCandidate) -and -not $AllowMissingRoot) {
-        throw "Root path was not supplied and config.archiveRoots is empty."
+        throw (New-ArchiveError -Category ([ArchiveErrorCategory]::PathError) -Message "Root path was not supplied and config.archiveRoots is empty." -Stage $ScriptName)
     }
 
     $resolvedRoot = $null
     if (-not [string]::IsNullOrWhiteSpace($rootCandidate)) {
         $resolvedRoot = Resolve-ArchivePath -PathValue $rootCandidate -BasePath $toolkitRoot
         if ((-not $AllowMissingRoot) -and (-not (Test-Path -LiteralPath $resolvedRoot -PathType Container))) {
-            throw "Root path does not exist: $resolvedRoot"
+            throw (New-ArchiveError -Category ([ArchiveErrorCategory]::PathError) -Message "Root path does not exist: $resolvedRoot" -Path $resolvedRoot -Stage $ScriptName)
         }
         if ((-not $AllowSystemRoot) -and (Test-ArchiveSystemPath -Path $resolvedRoot)) {
-            throw "Root path appears to be a system directory: $resolvedRoot. Use -AllowSystemRoot to override."
+            throw (New-ArchiveError -Category ([ArchiveErrorCategory]::PathError) -Message "Root path appears to be a system directory: $resolvedRoot. Use -AllowSystemRoot to override." -Path $resolvedRoot -Stage $ScriptName)
         }
     }
 
@@ -147,7 +341,7 @@ function New-ArchiveRun {
             $allowInside = [bool]$config.safety.allowOutputInsideRoot
         }
         if (-not $allowInside) {
-            throw "Output path is inside root path. Refusing by default. Root: $resolvedRoot Output: $resolvedOutput"
+            throw (New-ArchiveError -Category ([ArchiveErrorCategory]::PathError) -Message "Output path is inside root path. Refusing by default. Root: $resolvedRoot Output: $resolvedOutput" -Path $resolvedOutput -Stage $ScriptName)
         }
     }
 
@@ -174,14 +368,81 @@ function New-ArchiveRun {
 function Write-ArchiveLog {
     param(
         [Parameter(Mandatory = $true)]$Run,
-        [Parameter(Mandatory = $true)][string]$Message
+        [Parameter(Mandatory = $true)][string]$Message,
+        [string]$Level = "INFO",
+        [string]$Category = "general",
+        [object]$Data = $null
     )
 
-    $line = "[$(Get-Date -Format o)] $Message"
+    $timestamp = Get-Date -Format "o"
+    
+    # Plain text log entry
+    $line = "[$timestamp] [$Level] $Message"
     Add-Content -LiteralPath $Run.LogPath -Value $line -Encoding UTF8
+    
+    # Structured JSON log entry
+    $jsonLogPath = $Run.LogPath -replace '\.log$', '.json'
+    $jsonEntry = [pscustomobject]@{
+        timestamp = $timestamp
+        level = $Level
+        category = $Category
+        message = $Message
+        stage = $Run.ScriptName
+        data = $Data
+    } | ConvertTo-Json -Compress
+    
+    Add-Content -LiteralPath $jsonLogPath -Value $jsonEntry -Encoding UTF8
+    
     if ($Run.VerboseLog) {
         Write-Host $line
     }
+}
+
+function Write-ArchiveMetrics {
+    param(
+        [Parameter(Mandatory = $true)]$Run,
+        [Parameter(Mandatory = $true)][string]$MetricName,
+        [Parameter(Mandatory = $true)][double]$Value,
+        [string]$Unit = "count",
+        [object]$Tags = $null
+    )
+
+    $timestamp = Get-Date -Format "o"
+    $metricsPath = Join-Path $Run.OutputPath "logs/metrics.json"
+    
+    $metricEntry = [pscustomobject]@{
+        timestamp = $timestamp
+        stage = $Run.ScriptName
+        metric = $MetricName
+        value = $Value
+        unit = $Unit
+        tags = $Tags
+    } | ConvertTo-Json -Compress
+    
+    Add-Content -LiteralPath $metricsPath -Value $metricEntry -Encoding UTF8
+}
+
+function Start-ArchiveTimer {
+    param(
+        [Parameter(Mandatory = $true)][string]$OperationName
+    )
+
+    return [pscustomobject]@{
+        Operation = $OperationName
+        StartTime = Get-Date
+        EndTime = $null
+        Duration = $null
+    }
+}
+
+function Stop-ArchiveTimer {
+    param(
+        [Parameter(Mandatory = $true)]$Timer
+    )
+
+    $Timer.EndTime = Get-Date
+    $Timer.Duration = ($Timer.EndTime - $Timer.StartTime).TotalSeconds
+    return $Timer
 }
 
 function Export-ArchiveCsv {
@@ -212,7 +473,7 @@ function Import-ArchiveCsv {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-        throw "Required CSV not found: $Path"
+        throw (New-ArchiveError -Category ([ArchiveErrorCategory]::CsvError) -Message "Required CSV not found: $Path" -Path $Path)
     }
 
     $content = Get-Content -LiteralPath $Path -Raw
@@ -335,19 +596,21 @@ function Test-ArchiveExcluded {
     $relative = $relative.Replace([string][System.IO.Path]::AltDirectorySeparatorChar, "/")
     $extension = [System.IO.Path]::GetExtension($FullName).ToLowerInvariant()
 
-    if ($Config.exclusions -and $Config.exclusions.extensions) {
-        foreach ($excludedExt in $Config.exclusions.extensions) {
-            if ($extension -eq ([string]$excludedExt).ToLowerInvariant()) {
-                return $true
+    if ($Config.PSObject.Properties.Name -contains "exclusions" -and $Config.exclusions) {
+        if ($Config.exclusions.PSObject.Properties.Name -contains "extensions" -and $Config.exclusions.extensions) {
+            foreach ($excludedExt in $Config.exclusions.extensions) {
+                if ($extension -eq ([string]$excludedExt).ToLowerInvariant()) {
+                    return $true
+                }
             }
         }
-    }
 
-    if ($Config.exclusions -and $Config.exclusions.pathGlobs) {
-        foreach ($glob in $Config.exclusions.pathGlobs) {
-            $pattern = ([string]$glob).Replace("\", "/")
-            if ($relative -like $pattern) {
-                return $true
+        if ($Config.exclusions.PSObject.Properties.Name -contains "pathGlobs" -and $Config.exclusions.pathGlobs) {
+            foreach ($glob in $Config.exclusions.pathGlobs) {
+                $pattern = ([string]$glob).Replace("\", "/")
+                if ($relative -like $pattern) {
+                    return $true
+                }
             }
         }
     }
@@ -392,7 +655,7 @@ function Get-ArchiveHash {
         return (Get-FileHash -LiteralPath $Path -Algorithm $Algorithm -ErrorAction Stop).Hash
     }
     catch {
-        throw "Hash failed: $($_.Exception.Message)"
+        throw (New-ArchiveError -Category ([ArchiveErrorCategory]::HashError) -Message "Hash failed: $($_.Exception.Message)" -Path $Path -OriginalError $_.Exception)
     }
 }
 
@@ -404,7 +667,7 @@ function Invoke-ArchiveConfiguredCommand {
     )
 
     if (-not $Template.command) {
-        throw "Configured command template is missing 'command'."
+        throw (New-ArchiveError -Category ([ArchiveErrorCategory]::ConfigError) -Message "Configured command template is missing 'command'." -Path $Path)
     }
 
     $command = [string]$Template.command
@@ -453,3 +716,9 @@ function ConvertTo-ArchiveMarkdownValue {
 }
 
 Export-ModuleMember -Function *
+Export-ModuleMember -Function New-ArchiveError
+Export-ModuleMember -Function Invoke-ArchiveRetry
+Export-ModuleMember -Function Write-ArchiveMetrics
+Export-ModuleMember -Function Start-ArchiveTimer
+Export-ModuleMember -Function Stop-ArchiveTimer
+Export-ModuleMember -Function Test-ArchiveConfigSchema

@@ -4,3 +4,6 @@ outputs/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Session memory (per-session, not source)
+MEMORY.md
