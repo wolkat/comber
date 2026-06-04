@@ -28,6 +28,31 @@
     "hashMaxBytes": 0,
     "progressEvery": 250
   },
+  "dedupe": {
+    "enableNearDuplicate": false,
+    "similarityThreshold": 0.8,
+    "czkawka": {
+      "command": "czkawka_cli",
+      "arguments": [
+        "image",
+        "--dirs",
+        "{directories}",
+        "--min-size",
+        "0",
+        "--similarity",
+        "{similarityThreshold}"
+      ]
+    },
+    "perceptualHash": {
+      "command": "identify",
+      "arguments": [
+        "-quiet",
+        "-format",
+        "%#",
+        "{path}"
+      ]
+    }
+  },
   "metadata": {
     "enableExifTool": true,
     "exifToolJson": {

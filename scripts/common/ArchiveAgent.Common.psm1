@@ -119,7 +119,7 @@ function Test-ArchiveConfigSchema {
     $warnings = @()
 
     # Required top-level sections
-    $requiredSections = @("archiveRoots", "outputPath", "inventory", "metadata", "extraction", "transcription", "classification", "knowledgeBase", "actions", "safety")
+    $requiredSections = @("archiveRoots", "outputPath", "inventory", "dedupe", "metadata", "extraction", "transcription", "classification", "knowledgeBase", "actions", "safety")
     foreach ($section in $requiredSections) {
         if (-not ($Config.PSObject.Properties.Name -contains $section)) {
             $errors += "Missing required section: $section"
@@ -151,6 +151,23 @@ function Test-ArchiveConfigSchema {
         }
         if ($Config.inventory.PSObject.Properties.Name -contains "progressEvery" -and $Config.inventory.progressEvery -lt 1) {
             $errors += "inventory.progressEvery must be positive"
+        }
+    }
+
+    # Validate dedupe section
+    if ($Config.PSObject.Properties.Name -contains "dedupe" -and $Config.dedupe) {
+        if ($Config.dedupe.PSObject.Properties.Name -contains "enableNearDuplicate" -and $Config.dedupe.enableNearDuplicate -and -not ($Config.dedupe.enableNearDuplicate -is [bool])) {
+            $errors += "dedupe.enableNearDuplicate must be a boolean"
+        }
+        if ($Config.dedupe.PSObject.Properties.Name -contains "enableNearDuplicate" -and $Config.dedupe.enableNearDuplicate) {
+            if (-not ($Config.dedupe.PSObject.Properties.Name -contains "czkawka" -and $Config.dedupe.czkawka)) {
+                $errors += "dedupe.czkawka is required when near-duplicate detection is enabled"
+            }
+        }
+        if ($Config.dedupe.PSObject.Properties.Name -contains "similarityThreshold" -and $Config.dedupe.similarityThreshold) {
+            if ($Config.dedupe.similarityThreshold -lt 0 -or $Config.dedupe.similarityThreshold -gt 1) {
+                $errors += "dedupe.similarityThreshold must be between 0 and 1"
+            }
         }
     }
 
@@ -298,7 +315,7 @@ function New-ArchiveRun {
     $config = $configInfo.Data
 
     # Ensure config sections exist with safe defaults
-    $requiredSections = @("inventory", "metadata", "extraction", "transcription", "classification", "knowledgeBase", "actions", "safety")
+    $requiredSections = @("inventory", "dedupe", "metadata", "extraction", "transcription", "classification", "knowledgeBase", "actions", "safety")
     foreach ($section in $requiredSections) {
         if (-not ($config.PSObject.Properties.Name -contains $section) -or $null -eq $config.$section) {
             $config | Add-Member -NotePropertyName $section -NotePropertyValue ([pscustomobject]@{}) -Force
@@ -713,6 +730,82 @@ function ConvertTo-ArchiveMarkdownValue {
 
     if ($null -eq $Value) { return "" }
     return ([string]$Value).Replace("\", "\\").Replace("`"", "\`"")
+}
+
+function Get-ArchivePerceptualHash {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)]$Template
+    )
+
+    $result = Invoke-ArchiveConfiguredCommand -Template $Template -Path $Path
+    if (-not $result.Available -or $result.ExitCode -ne 0) {
+        return [pscustomobject]@{
+            Path = $Path
+            Hash = ""
+            Available = $false
+            Error = if ($result.Error) { $result.Error } else { "Exit code $($result.ExitCode)" }
+        }
+    }
+
+    $hashValue = $result.Output.Trim()
+    return [pscustomobject]@{
+        Path = $Path
+        Hash = $hashValue
+        Available = $true
+        Error = ""
+    }
+}
+
+function Compress-ArchivePerceptualHash {
+    param(
+        [Parameter(Mandatory = $true)][string]$HexHash
+    )
+
+    $bytes = New-Object System.Collections.Generic.List[byte]
+    for ($i = 0; $i -lt $HexHash.Length; $i += 2) {
+        if ($i + 1 -lt $HexHash.Length) {
+            $byteVal = [Convert]::ToByte($HexHash.Substring($i, 2), 16)
+            $bytes.Add($byteVal)
+        }
+    }
+
+    $bits = New-Object System.Collections.Generic.List[bool]
+    foreach ($b in $bytes) {
+        for ($bit = 7; $bit -ge 0; $bit--) {
+            $bits.Add(([bool](($b -shr $bit) -band 1)))
+        }
+    }
+
+    $dhashBits = New-Object System.Collections.Generic.List[bool]
+    $cols = 8
+    for ($row = 0; $row -lt ($bits.Count - $cols); $row++) {
+        if ($bits[$row] -ne $bits[$row + $cols]) {
+            $dhashBits.Add($true)
+        }
+    }
+
+    $dhash = 0
+    foreach ($bit in $dhashBits) {
+        $dhash = ($dhash -shl 1) -bor ([int]$bit)
+    }
+
+    return $dhash
+}
+
+function Compare-ArchivePerceptualHash {
+    param(
+        [Parameter(Mandatory = $true)][long]$HashA,
+        [Parameter(Mandatory = $true)][long]$HashB
+    )
+
+    $xor = $HashA -bxor $HashB
+    $diffBits = 0
+    while ($xor -gt 0) {
+        $diffBits += ($xor -band 1)
+        $xor = $xor -shr 1
+    }
+    return [double]($diffBits) / 64
 }
 
 Export-ModuleMember -Function *

@@ -43,6 +43,8 @@ pwsh ./scripts/01-Inventory.ps1 -RootPath ./tests/fixtures/source -OutputPath ./
 - `outputs/inventory/file-errors.csv`
 - `outputs/metadata/metadata.csv`
 - `outputs/reports/exact-duplicates.csv`
+- `outputs/reports/near-duplicates.csv` (when near-duplicate detection is enabled)
+- `outputs/reports/near-duplicate-status.csv`
 - `outputs/extracted/*.md`
 - `outputs/transcripts/*.md`
 - `outputs/classification/classification.csv`
@@ -58,6 +60,8 @@ Optional tools improve coverage:
 
 - ExifTool for richer media/document metadata.
 - FFmpeg/ffprobe for audio/video metadata and extraction.
+- Czkawka CLI for near-duplicate image/video detection.
+- ImageMagick for perceptual hash pre-filtering of similar images.
 - Tesseract or PaddleOCR for image OCR.
 - MarkItDown or Docling for document conversion.
 - whisper.cpp or faster-whisper for transcripts.

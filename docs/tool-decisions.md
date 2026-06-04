@@ -19,3 +19,11 @@ External tools are optional unless a stage explicitly needs them. Their command 
 ## LLMs
 
 LLMs are useful for tags, themes, summaries, and captions. They are not used for deletion decisions.
+
+## Czkawka
+
+Czkawka CLI is used for near-duplicate image and video detection when enabled via `dedupe.enableNearDuplicate`. It performs content-based similarity comparison beyond what SHA256 exact matching can catch. The command template lives in the config so flags can be adjusted per installed version.
+
+## Perceptual Hashing (ImageMagick)
+
+ImageMagick `identify` is used as a pre-filter for near-duplicate image detection. It produces a signature hash that can be compared with a configurable distance threshold. This runs before Czkawka when both are available, providing fast pairwise comparison for image files. The dHash implementation converts the signature into a 64-bit fingerprint and compares bit-distance as a similarity ratio.

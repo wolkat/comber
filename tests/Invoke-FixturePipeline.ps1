@@ -55,6 +55,7 @@ foreach ($expected in @(
     "inventory/inventory.csv",
     "metadata/metadata.csv",
     "reports/exact-duplicates.csv",
+    "reports/near-duplicate-status.csv",
     "reports/extraction-status.csv",
     "classification/classification.csv",
     "reports/review-summary.md"

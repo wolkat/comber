@@ -40,5 +40,6 @@ The toolkit does not require a service or database server.
 
 - File inventory and hashes are deterministic.
 - Duplicate candidates are recommendations until a human approves a manifest.
+- Near-duplicate detection uses perceptual hashing (ImageMagick `identify`) or Czkawka CLI, both opt-in via `dedupe` config section.
 - LLM outputs are treated as untrusted annotations.
 - The reviewed-action script is the only script that may move or delete files.
