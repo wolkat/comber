@@ -248,7 +248,7 @@ Write-Warning "Function Get-OldData is deprecated. Use Get-NewData instead."
 
 | Version | Release Date | Key Changes |
 |---------|--------------|-------------|
-| 0.1.0 | 2026-05-31 | Initial release |
+| 0.1.0 | 2026-06-04 | Initial release |
 | 1.0.0 | TBD | First stable release |
 
 ## References
