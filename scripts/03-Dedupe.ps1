@@ -139,11 +139,16 @@ try {
 
         if ($useCzkawka) {
             Write-ArchiveLog -Run $run -Message "Running Czkawka near-duplicate detection."
-            $rootDirs = $run.Config.archiveRoots -join ","
             $similarity = "80"
             if ($dedupeConfig.PSObject.Properties.Name -contains "similarityThreshold") {
                 $similarity = [string][int]([double]$dedupeConfig.similarityThreshold * 100)
             }
+
+            $escapedRoots = New-Object System.Collections.Generic.List[string]
+            foreach ($root in $run.Config.archiveRoots) {
+                $escapedRoots.Add(([string]$root).Replace(",", "\,"))
+            }
+            $rootDirs = $escapedRoots -join ","
 
             $czkawkaArgs = New-Object System.Collections.Generic.List[string]
             foreach ($arg in $czkawkaTemplate.arguments) {

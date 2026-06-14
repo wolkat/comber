@@ -13,7 +13,8 @@ Comber is a standalone PowerShell 7 toolkit for local archive inventory, metadat
 ./
 ├── config/             # JSON configs (pipeline.example.json, tools.json)
 ├── docs/               # Architecture, tool decisions, troubleshooting
-├── scripts/            # 9 pipeline stages + common module + installers
+├── scripts/            # 10 pipeline stages + common module + installers
+│   └── python/         # Python sidecars for ML/NLP features
 ├── tests/              # Fixture pipeline + static checks
 ├── outputs/            # Runtime artifacts (logs, CSVs, reports, vault)
 ├── CHECKLIST.md        # Stage validation checklist
@@ -24,8 +25,9 @@ Comber is a standalone PowerShell 7 toolkit for local archive inventory, metadat
 
 | Task | Location | Notes |
 |------|----------|-------|
-| Pipeline stage | `scripts/NN-*.ps1` | 01=inventory through 09=apply actions |
-| Shared functions | `scripts/common/ArchiveAgent.Common.psm1` | Config, CSV, hashing, path safety |
+| Pipeline stage | `scripts/NN-*.ps1` | 01=inventory through 10=cleanup |
+| Python sidecars | `scripts/python/` | 10=entity extraction, 11=semantic search |
+| Shared functions | `scripts/common/ArchiveAgent.Common.psm1` | Config, CSV, hashing, path safety, LLM JSON parsing |
 | Install scripts | `scripts/install/Install-*.ps1` | Linux/Mac/Windows |
 | Config schema | `config/pipeline.example.json` | Archive roots, exclusions, tool templates |
 | Test harness | `tests/Invoke-FixturePipeline.ps1` | Runs full pipeline on fixtures |
@@ -57,11 +59,29 @@ Comber is a standalone PowerShell 7 toolkit for local archive inventory, metadat
 ## COMMANDS
 
 ```bash
-make lint       # Parse-check all PS1 + scan for destructive commands outside 09
+make lint       # Parse-check all PS1 + scan for destructive commands outside 09/10
 make test       # Run fixture pipeline
 make typecheck  # Alias for lint
 make build      # No-op: validate expected files exist
 ```
+
+## PYTHON SIDECARS
+
+Python sidecars in `scripts/python/` extend Comber with ML/NLP capabilities. All support `--help`:
+
+```bash
+# Entity extraction (requires: pip install gliner2 pyyaml)
+python scripts/python/10_extract_entities.py \
+    --classification-csv outputs/classification/classification.csv \
+    --output-dir outputs
+
+# Semantic search (requires: pip install sentence-transformers chromadb pyyaml)
+python scripts/python/11_semantic_search.py --mode index \
+    --vault-dir outputs/vault/archive-vault --output-dir outputs
+python scripts/python/11_semantic_search.py --mode query --query "find documents about X"
+```
+
+Requirements files: `scripts/python/requirements-entities.txt`, `scripts/python/requirements-search.txt`
 
 ## NOTES
 

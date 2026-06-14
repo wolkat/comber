@@ -29,8 +29,11 @@ foreach ($file in $files) {
     }
 }
 
-$actionScript = Join-Path $ToolkitRoot "scripts/09-ApplyReviewedActions.ps1"
-$nonActionDestructive = $scriptFiles | Where-Object { $_.FullName -ne $actionScript } | ForEach-Object {
+$actionScripts = @(
+    (Join-Path $ToolkitRoot "scripts/09-ApplyReviewedActions.ps1"),
+    (Join-Path $ToolkitRoot "scripts/10-Cleanup.ps1")
+)
+$nonActionDestructive = $scriptFiles | Where-Object { $_.FullName -notin $actionScripts } | ForEach-Object {
     $content = Get-Content -LiteralPath $_.FullName -Raw
     if ($content -match '\bRemove-Item\b' -or $content -match '\bMove-Item\b') {
         $_.FullName

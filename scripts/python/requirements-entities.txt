@@ -1,0 +1,5 @@
+# Requirements for 10_extract_entities.py
+# Install: pip install -r requirements-entities.txt
+
+gliner2>=0.1.0
+pyyaml>=6.0

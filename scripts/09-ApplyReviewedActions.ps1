@@ -43,14 +43,17 @@ try {
             continue
         }
 
-        if (-not (Test-Path -LiteralPath $row.path -PathType Leaf)) {
-            $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "missing"; message = "Source file not found." })
-            continue
-        }
-
         if ($row.action -eq "quarantine" -or $row.action -eq "move") {
-            $destinationRoot = if (-not [string]::IsNullOrWhiteSpace($row.destination)) { $row.destination } else { $quarantinePath }
-            $destinationRoot = Resolve-ArchivePath -PathValue $destinationRoot -BasePath $run.ToolkitRoot
+            $destinationRoot = $quarantinePath
+            if (-not [string]::IsNullOrWhiteSpace($row.destination)) {
+                $resolvedDest = Resolve-ArchivePath -PathValue $row.destination -BasePath $run.ToolkitRoot
+                $quarantineBase = Resolve-ArchivePath -PathValue $quarantinePath -BasePath $run.ToolkitRoot
+                if (-not (Test-PathInside -ChildPath $resolvedDest -ParentPath $quarantineBase)) {
+                    $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "error"; message = "Destination path must be inside quarantine directory: $resolvedDest" })
+                    continue
+                }
+                $destinationRoot = $resolvedDest
+            }
             Ensure-ArchiveDirectory -Path $destinationRoot
             $destination = Join-Path $destinationRoot ([System.IO.Path]::GetFileName($row.path))
 
@@ -61,6 +64,9 @@ try {
                 try {
                     Move-Item -LiteralPath $row.path -Destination $destination -ErrorAction Stop
                     $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "moved"; message = $destination })
+                }
+                catch [System.IO.FileNotFoundException] {
+                    $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "missing"; message = "Source file not found." })
                 }
                 catch {
                     $results.Add([pscustomobject]@{ path = $row.path; action = $row.action; status = "error"; message = $_.Exception.Message })

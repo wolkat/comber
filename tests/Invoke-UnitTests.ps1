@@ -165,6 +165,20 @@ try {
         metadata = [pscustomobject]@{
             enableExifTool = $true
         }
+        dedupe = [pscustomobject]@{
+            enableNearDuplicate = $false
+            similarityThreshold = 0.8
+        }
+        cleanup = [pscustomobject]@{
+            enabled = $false
+            targets = @("extracted", "transcripts")
+        }
+        entities = [pscustomobject]@{
+            enabled = $false
+        }
+        search = [pscustomobject]@{
+            enabled = $false
+        }
         extraction = [pscustomobject]@{
             maxInlineTextBytes = 5242880
             enableExternalConverters = $false
@@ -202,16 +216,14 @@ try {
             hashMaxBytes = 0
             progressEvery = 250
         }
-        metadata = [pscustomobject]@{}
-        extraction = [pscustomobject]@{}
-        transcription = [pscustomobject]@{}
-        classification = [pscustomobject]@{
-            maxChars = 0
-        }
-        knowledgeBase = [pscustomobject]@{}
-        actions = [pscustomobject]@{}
-        safety = [pscustomobject]@{}
-        exclusions = [pscustomobject]@{}
+        metadata = [pscustomobject]@{ enableExifTool = $true }
+        extraction = [pscustomobject]@{ enableExternalConverters = $false }
+        transcription = [pscustomobject]@{ enabled = $false }
+        classification = [pscustomobject]@{ enabled = $false; maxChars = 0 }
+        knowledgeBase = [pscustomobject]@{ vaultName = "test" }
+        actions = [pscustomobject]@{ enableApplyReviewedActions = $false }
+        safety = [pscustomobject]@{ allowDelete = $false }
+        cleanup = [pscustomobject]@{ enabled = $false }
     }
 
     try {
@@ -227,6 +239,32 @@ catch {
     Add-TestResult -TestName "Test-ArchiveConfigSchema" -Passed $false -Message $_.Exception.Message
 }
 
+# Test ConvertFrom-ArchiveLlmJson
+try {
+    $result = ConvertFrom-ArchiveLlmJson -RawText '{"summary":"test","tags":["a","b"],"vibe":"cool"}'
+    $passed = $result -and $result.summary -eq "test" -and $result.vibe -eq "cool"
+    Add-TestResult -TestName "ConvertFrom-ArchiveLlmJson (clean JSON)" -Passed $passed
+
+    $result = ConvertFrom-ArchiveLlmJson -RawText "prefix`n`n{`"summary`":`"my summary`",`"tags`":[`"tag1`"],`"vibe`":`"happy`"}`n`nsuffix"
+    $passed = $result -and $result.summary -eq "my summary" -and $result.vibe -eq "happy"
+    Add-TestResult -TestName "ConvertFrom-ArchiveLlmJson (text with JSON)" -Passed $passed
+
+    $result = ConvertFrom-ArchiveLlmJson -RawText "No JSON here at all"
+    $passed = $null -eq $result
+    Add-TestResult -TestName "ConvertFrom-ArchiveLlmJson (no JSON)" -Passed $passed
+
+    $result = ConvertFrom-ArchiveLlmJson -RawText ([string]::Empty)
+    $passed = $null -eq $result
+    Add-TestResult -TestName "ConvertFrom-ArchiveLlmJson (empty)" -Passed $passed
+
+    $result = ConvertFrom-ArchiveLlmJson -RawText '{"data":{"inner":"value","list":[1,2,3]},"ok":true}'
+    $passed = $result -and $result.data.inner -eq "value" -and $result.ok -eq $true
+    Add-TestResult -TestName "ConvertFrom-ArchiveLlmJson (nested)" -Passed $passed
+}
+catch {
+    Add-TestResult -TestName "ConvertFrom-ArchiveLlmJson" -Passed $false -Message $_.Exception.Message
+}
+
 # Print results
 Write-Host "`nUnit Test Results:"
 Write-Host "=================="
@@ -240,8 +278,8 @@ foreach ($test in $tests) {
 
 Write-Host "`nSummary:"
 Write-Host "  Total: $($tests.Count)"
-Write-Host "  Passed: $(($tests | Where-Object { $_.Passed }).Count)"
-Write-Host "  Failed: $(($tests | Where-Object { -not $_.Passed }).Count)"
+Write-Host "  Passed: $(@($tests | Where-Object { $_.Passed }).Count)"
+Write-Host "  Failed: $(@($tests | Where-Object { -not $_.Passed }).Count)"
 
 if ($failures.Count -gt 0) {
     Write-Host "`nFailed Tests:"

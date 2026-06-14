@@ -35,6 +35,16 @@ The toolkit does not require a service or database server.
 - JSON sidecars are used where nested metadata is useful.
 - Markdown is used for the final knowledge base.
 - Logs capture operational details.
+- ChromaDB (optional) is used for vector embeddings in semantic search.
+
+## External Language Sidecars
+
+Features requiring ML/NLP libraries are implemented as Python scripts in `scripts/python/`:
+
+- `10_extract_entities.py` — NER using GLiNER2, reads classification.csv + extracted/transcripts markdown, writes entities.csv
+- `11_semantic_search.py` — Vector search using sentence-transformers + ChromaDB, indexes vault notes and supports natural-language queries
+
+These follow the same CLI conventions (--help, argument parsing) and read from the PS1 pipeline's CSV/markdown outputs.
 
 ## Trust Boundaries
 
@@ -42,4 +52,4 @@ The toolkit does not require a service or database server.
 - Duplicate candidates are recommendations until a human approves a manifest.
 - Near-duplicate detection uses perceptual hashing (ImageMagick `identify`) or Czkawka CLI, both opt-in via `dedupe` config section.
 - LLM outputs are treated as untrusted annotations.
-- The reviewed-action script is the only script that may move or delete files.
+- The reviewed-action script and cleanup script are the only scripts that may move or delete files.

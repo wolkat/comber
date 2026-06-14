@@ -26,6 +26,61 @@ function Get-HeuristicTags {
     return (($tags | Select-Object -Unique) -join ";")
 }
 
+function Get-FileContentForLlm {
+    param(
+        [Parameter(Mandatory = $true)]$Item,
+        [string]$ContentDir,
+        [string]$TranscriptDir,
+        [int]$MaxChars
+    )
+
+    $stem = Get-ArchiveSafeStem -Path $Item.path -PreferredName $Item.name
+
+    $contentPaths = @(
+        (Join-Path $ContentDir "$stem.md"),
+        (Join-Path $TranscriptDir "$stem.md")
+    )
+
+    foreach ($path in $contentPaths) {
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            try {
+                $raw = Get-Content -LiteralPath $path -Raw -ErrorAction Stop
+                $body = ($raw -replace '^---.*?---\s*', '').Trim()
+                if ($body.Length -gt $MaxChars) {
+                    return $body.Substring(0, $MaxChars)
+                }
+                return $body
+            }
+            catch {
+                return $null
+            }
+        }
+    }
+    return $null
+}
+
+function Get-ClassificationConfig {
+    param($Config)
+
+    if (-not $Config.classification) {
+        return [pscustomobject]@{
+            Enabled = $false
+            Model = "qwen3:4b"
+            MaxChars = 6000
+            Endpoint = "http://localhost:11434"
+            SystemPrompt = "You are an archive analyst. Categorize the following file content."
+        }
+    }
+
+    return [pscustomobject]@{
+        Enabled = [bool]$Config.classification.enabled
+        Model = if ($Config.classification.model) { [string]$Config.classification.model } else { "qwen3:4b" }
+        MaxChars = if ($Config.classification.maxChars) { [int]$Config.classification.maxChars } else { 6000 }
+        Endpoint = if ($Config.classification.ollamaEndpoint) { [string]$Config.classification.ollamaEndpoint } else { "http://localhost:11434" }
+        SystemPrompt = if ($Config.classification.systemPrompt) { [string]$Config.classification.systemPrompt } else { "You are an archive analyst. Categorize the following file content." }
+    }
+}
+
 try {
     $run = New-ArchiveRun -ScriptName "06-ClassifyThemes" -ConfigPath $ConfigPath -RootPath $RootPath -OutputPath $OutputPath -VerboseLog:$VerboseLog
     $inventoryPath = Join-Path $run.OutputPath "inventory/inventory.csv"
@@ -34,31 +89,67 @@ try {
         throw "Inventory CSV is missing required columns for classification stage: $($invCheck.Missing -join ', ')"
     }
     $inventory = @(Import-ArchiveCsv -Path $inventoryPath)
-    $modelEnabled = $run.Config.classification -and [bool]$run.Config.classification.enabled
+    $classCfg = Get-ClassificationConfig -Config $run.Config
+    $contentDir = Join-Path $run.OutputPath "extracted"
+    $transcriptDir = Join-Path $run.OutputPath "transcripts"
     $rows = New-Object System.Collections.Generic.List[object]
+    $errors = New-Object System.Collections.Generic.List[object]
 
     foreach ($item in $inventory) {
         $tags = Get-HeuristicTags -Item $item
-        $status = if ($modelEnabled) { "model_not_invoked_without_reviewed_template" } else { "heuristic_only" }
+        $vibe = ""
         $summary = "File categorized as $($item.category)."
+        $confidence = "low"
+        $reason = "Heuristic tags from category, extension, and filename. LLM classification is optional and disabled unless reviewed."
+        $status = "heuristic_only"
+
+        if ($classCfg.Enabled) {
+            $content = Get-FileContentForLlm -Item $item -ContentDir $contentDir -TranscriptDir $transcriptDir -MaxChars $classCfg.MaxChars
+            $userPrompt = if ($content) {
+                "File name: $($item.name)`nCategory: $($item.category)`nExtension: $($item.extension)`n`nCONTENT:`n$content`n`nReturn ONLY a JSON object with fields: summary (one sentence), tags (array of 2-5 keywords), vibe (one-word mood)."
+            } else {
+                "File name: $($item.name)`nCategory: $($item.category)`nExtension: $($item.extension)`n`nReturn ONLY a JSON object with fields: summary (one sentence), tags (array of 2-5 keywords), vibe (one-word mood)."
+            }
+
+            $result = Invoke-ArchiveLlm -Endpoint $classCfg.Endpoint -Model $classCfg.Model -SystemPrompt $classCfg.SystemPrompt -UserPrompt $userPrompt
+            if ($result.Success -and $result.Json) {
+                $parsed = $result.Json
+                $summary = if ($parsed.summary) { [string]$parsed.summary } else { $summary }
+                $vibe = if ($parsed.vibe) { [string]$parsed.vibe } else { "" }
+                if ($parsed.tags -and @($parsed.tags).Count -gt 0) {
+                    $tags = ($parsed.tags | ForEach-Object { [string]$_ } | Select-Object -Unique) -join ";"
+                }
+                $confidence = "medium"
+                $status = "llm_structured"
+                $reason = "LLM classification with structured JSON response."
+            }
+            else {
+                $status = "llm_failed"
+                $reason = "LLM call failed: $($result.Error). Using heuristic fallback."
+                $errors.Add([pscustomobject]@{ stage = "06-ClassifyThemes"; path = $item.path; error = $result.Error })
+            }
+        }
 
         $rows.Add([pscustomobject]@{
             path = $item.path
             category = $item.category
             tags = $tags
+            vibe = $vibe
             theme = $item.category
             summary = $summary
-            confidence = "low"
-            reason = "Heuristic tags from category, extension, and filename. LLM classification is optional and disabled unless reviewed."
+            confidence = $confidence
+            reason = $reason
             classification_status = $status
         })
     }
 
     if (-not $DryRun) {
         Export-ArchiveCsv -Rows $rows -Path (Join-Path $run.OutputPath "classification/classification.csv")
+        Export-ArchiveCsv -Rows $errors -Path (Join-Path $run.OutputPath "classification/classification-errors.csv")
     }
 
     Write-ArchiveLog -Run $run -Message "Classification rows: $($rows.Count)"
+    if ($errors.Count -gt 0) { exit 3 }
     exit 0
 }
 catch {

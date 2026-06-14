@@ -62,6 +62,7 @@ try {
         $bestDatetime = if ($m) { $m.best_datetime } else { "" }
         $bestDatetimeSource = if ($m) { $m.best_datetime_source } else { "" }
         $tags = if ($c) { $c.tags } else { "" }
+        $vibe = if ($c -and $c.vibe) { $c.vibe } else { "" }
         $theme = if ($c) { $c.theme } else { "" }
         $summary = if ($c) { $c.summary } else { "" }
         $duplicateGroupId = if ($d) { $d.duplicate_group_id } else { "" }
@@ -83,6 +84,7 @@ try {
             "best_datetime: `"$bestDatetime`""
             "best_datetime_source: `"$bestDatetimeSource`""
             "tags: `"$tags`""
+            "vibe: `"$vibe`""
             "duplicate_group_id: `"$duplicateGroupId`""
             "recommended_action: `"$recommendedAction`""
             "generated_at: `"$(Get-Date -Format o)`""

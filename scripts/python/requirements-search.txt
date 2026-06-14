@@ -1,0 +1,6 @@
+# Requirements for 11_semantic_search.py
+# Install: pip install -r requirements-search.txt
+
+sentence-transformers>=2.2.0
+chromadb>=0.4.0
+pyyaml>=6.0

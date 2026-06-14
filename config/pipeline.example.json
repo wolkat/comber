@@ -55,12 +55,25 @@
   },
   "metadata": {
     "enableExifTool": true,
+    "enableMediaProbe": false,
     "exifToolJson": {
       "command": "exiftool",
       "arguments": [
         "-j",
         "-time:all",
         "-s",
+        "{path}"
+      ]
+    },
+    "ffprobe": {
+      "command": "ffprobe",
+      "arguments": [
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        "-show_streams",
+        "-show_format",
         "{path}"
       ]
     }
@@ -110,11 +123,30 @@
     "enabled": false,
     "provider": "ollama",
     "model": "qwen3:4b",
-    "maxChars": 6000
+    "maxChars": 6000,
+    "ollamaEndpoint": "http://localhost:11434",
+    "systemPrompt": "You are an archive analyst. Categorize file content into themes and extract keywords."
   },
   "knowledgeBase": {
     "vaultName": "archive-vault",
     "copyOriginals": false
+  },
+  "entities": {
+    "enabled": false,
+    "model": "fastino/gliner2-base-v1",
+    "labels": ["person", "brand", "organization", "location", "topic", "concept", "product", "event"],
+    "threshold": 0.5,
+    "maxChars": 10000
+  },
+  "search": {
+    "enabled": false,
+    "embeddingModel": "all-MiniLM-L6-v2",
+    "chromaPersistDir": "./outputs/chroma_db",
+    "topK": 10
+  },
+  "cleanup": {
+    "enabled": false,
+    "targets": ["extracted", "transcripts", "sidecars"]
   },
   "actions": {
     "enableApplyReviewedActions": false,

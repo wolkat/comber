@@ -164,8 +164,9 @@ function Test-ArchiveConfigSchema {
                 $errors += "dedupe.czkawka is required when near-duplicate detection is enabled"
             }
         }
-        if ($Config.dedupe.PSObject.Properties.Name -contains "similarityThreshold" -and $Config.dedupe.similarityThreshold) {
-            if ($Config.dedupe.similarityThreshold -lt 0 -or $Config.dedupe.similarityThreshold -gt 1) {
+        if ($Config.dedupe.PSObject.Properties.Name -contains "similarityThreshold") {
+            $threshold = $Config.dedupe.similarityThreshold
+            if ($null -ne $threshold -and ($threshold -lt 0 -or $threshold -gt 1)) {
                 $errors += "dedupe.similarityThreshold must be between 0 and 1"
             }
         }
@@ -175,6 +176,12 @@ function Test-ArchiveConfigSchema {
     if ($Config.PSObject.Properties.Name -contains "metadata" -and $Config.metadata) {
         if ($Config.metadata.PSObject.Properties.Name -contains "enableExifTool" -and $Config.metadata.enableExifTool -and -not ($Config.metadata.enableExifTool -is [bool])) {
             $errors += "metadata.enableExifTool must be a boolean"
+        }
+        if ($Config.metadata.PSObject.Properties.Name -contains "enableMediaProbe" -and $Config.metadata.enableMediaProbe -and -not ($Config.metadata.enableMediaProbe -is [bool])) {
+            $errors += "metadata.enableMediaProbe must be a boolean"
+        }
+        if ($Config.metadata.PSObject.Properties.Name -contains "enableMediaProbe" -and $Config.metadata.enableMediaProbe -and -not ($Config.metadata.PSObject.Properties.Name -contains "ffprobe" -and $Config.metadata.ffprobe)) {
+            $errors += "metadata.ffprobe is required when enableMediaProbe is true"
         }
     }
 
@@ -206,6 +213,12 @@ function Test-ArchiveConfigSchema {
         if ($Config.classification.PSObject.Properties.Name -contains "maxChars" -and $Config.classification.maxChars -lt 1) {
             $errors += "classification.maxChars must be positive"
         }
+        if ($Config.classification.PSObject.Properties.Name -contains "ollamaEndpoint" -and $Config.classification.ollamaEndpoint -and -not ($Config.classification.ollamaEndpoint -is [string])) {
+            $errors += "classification.ollamaEndpoint must be a string"
+        }
+        if ($Config.classification.PSObject.Properties.Name -contains "systemPrompt" -and $Config.classification.systemPrompt -and -not ($Config.classification.systemPrompt -is [string])) {
+            $errors += "classification.systemPrompt must be a string"
+        }
     }
 
     # Validate knowledgeBase section
@@ -215,6 +228,36 @@ function Test-ArchiveConfigSchema {
         }
         if ($Config.knowledgeBase.PSObject.Properties.Name -contains "copyOriginals" -and $Config.knowledgeBase.copyOriginals -and -not ($Config.knowledgeBase.copyOriginals -is [bool])) {
             $errors += "knowledgeBase.copyOriginals must be a boolean"
+        }
+    }
+
+    # Validate entities section
+    if ($Config.PSObject.Properties.Name -contains "entities" -and $Config.entities) {
+        if ($Config.entities.PSObject.Properties.Name -contains "enabled" -and $Config.entities.enabled -and -not ($Config.entities.enabled -is [bool])) {
+            $errors += "entities.enabled must be a boolean"
+        }
+        if ($Config.entities.PSObject.Properties.Name -contains "threshold" -and $Config.entities.threshold -and ($Config.entities.threshold -lt 0 -or $Config.entities.threshold -gt 1)) {
+            $errors += "entities.threshold must be between 0 and 1"
+        }
+        if ($Config.entities.PSObject.Properties.Name -contains "labels" -and $Config.entities.labels -and -not ($Config.entities.labels -is [array])) {
+            $errors += "entities.labels must be an array"
+        }
+    }
+
+    # Validate search section
+    if ($Config.PSObject.Properties.Name -contains "search" -and $Config.search) {
+        if ($Config.search.PSObject.Properties.Name -contains "enabled" -and $Config.search.enabled -and -not ($Config.search.enabled -is [bool])) {
+            $errors += "search.enabled must be a boolean"
+        }
+    }
+
+    # Validate cleanup section
+    if ($Config.PSObject.Properties.Name -contains "cleanup" -and $Config.cleanup) {
+        if ($Config.cleanup.PSObject.Properties.Name -contains "enabled" -and $Config.cleanup.enabled -and -not ($Config.cleanup.enabled -is [bool])) {
+            $errors += "cleanup.enabled must be a boolean"
+        }
+        if ($Config.cleanup.PSObject.Properties.Name -contains "targets" -and $Config.cleanup.targets -and -not ($Config.cleanup.targets -is [array])) {
+            $errors += "cleanup.targets must be an array"
         }
     }
 
@@ -793,6 +836,78 @@ function Compress-ArchivePerceptualHash {
     return $dhash
 }
 
+function ConvertFrom-ArchiveLlmJson {
+    param([AllowEmptyString()][string]$RawText)
+
+    if ([string]::IsNullOrWhiteSpace($RawText)) { return $null }
+
+    $start = $RawText.IndexOf('{')
+    if ($start -lt 0) { return $null }
+
+    $depth = 0
+    for ($i = $start; $i -lt $RawText.Length; $i++) {
+        $c = $RawText[$i]
+        if ($c -eq '{') { $depth++ }
+        elseif ($c -eq '}') { $depth-- }
+        if ($depth -eq 0) {
+            try {
+                return $RawText.Substring($start, $i - $start + 1) | ConvertFrom-Json -Depth 10 -ErrorAction Stop
+            }
+            catch {
+                return $null
+            }
+        }
+    }
+    return $null
+}
+
+function Invoke-ArchiveLlm {
+    param(
+        [Parameter(Mandatory = $true)][string]$Endpoint,
+        [Parameter(Mandatory = $true)][string]$Model,
+        [Parameter(Mandatory = $true)][string]$SystemPrompt,
+        [Parameter(Mandatory = $true)][string]$UserPrompt,
+        [int]$TimeoutSeconds = 120
+    )
+
+    $body = @{
+        model = $Model
+        messages = @(
+            @{ role = "system"; content = $SystemPrompt }
+            @{ role = "user"; content = $UserPrompt }
+        )
+        stream = $false
+        options = @{ timeout = $TimeoutSeconds * 1000 }
+    } | ConvertTo-Json
+
+    try {
+        $response = Invoke-RestMethod -Uri "$Endpoint/api/chat" -Method Post -Body $body -ContentType "application/json" -TimeoutSec $TimeoutSeconds
+        if ($response -and $response.message -and $response.message.content) {
+            $json = ConvertFrom-ArchiveLlmJson -RawText $response.message.content
+            return [pscustomobject]@{
+                Success = $true
+                RawText = $response.message.content
+                Json = $json
+                Error = ""
+            }
+        }
+        return [pscustomobject]@{
+            Success = $false
+            RawText = ""
+            Json = $null
+            Error = "No content in response"
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            Success = $false
+            RawText = ""
+            Json = $null
+            Error = $_.Exception.Message
+        }
+    }
+}
+
 function Compare-ArchivePerceptualHash {
     param(
         [Parameter(Mandatory = $true)][long]$HashA,
@@ -808,10 +923,17 @@ function Compare-ArchivePerceptualHash {
     return [double]($diffBits) / 64
 }
 
-Export-ModuleMember -Function *
-Export-ModuleMember -Function New-ArchiveError
-Export-ModuleMember -Function Invoke-ArchiveRetry
-Export-ModuleMember -Function Write-ArchiveMetrics
-Export-ModuleMember -Function Start-ArchiveTimer
-Export-ModuleMember -Function Stop-ArchiveTimer
-Export-ModuleMember -Function Test-ArchiveConfigSchema
+Export-ModuleMember -Function @(
+    'New-ArchiveError', 'Invoke-ArchiveRetry', 'Write-ArchiveMetrics',
+    'Start-ArchiveTimer', 'Stop-ArchiveTimer', 'Test-ArchiveConfigSchema',
+    'ConvertFrom-ArchiveLlmJson', 'Invoke-ArchiveLlm',
+    'New-ArchiveRun', 'Write-ArchiveLog',
+    'Get-ArchiveToolkitRoot', 'Resolve-ArchivePath', 'Read-ArchiveConfig',
+    'Test-ArchiveCsvColumns', 'Import-ArchiveCsv', 'Export-ArchiveCsv',
+    'Ensure-ArchiveDirectory', 'Get-ArchiveFileCategory', 'Get-ArchiveFiles',
+    'Get-ArchiveHash', 'Get-ArchiveSafeStem', 'Test-ArchiveExcluded',
+    'Test-ArchiveCommand', 'Get-ArchiveToolVersion',
+    'Invoke-ArchiveConfiguredCommand', 'ConvertTo-ArchiveMarkdownValue',
+    'Get-ArchivePerceptualHash', 'Compress-ArchivePerceptualHash', 'Compare-ArchivePerceptualHash',
+    'Test-ArchiveSystemPath', 'Test-PathInside'
+)
