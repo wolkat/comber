@@ -12,6 +12,8 @@ This document provides API documentation for all exported functions in the `Arch
 - [File Operations](#file-operations)
 - [External Tools](#external-tools)
 - [String Utilities](#string-utilities)
+- [LLM Utilities](#llm-utilities)
+- [Pipeline Stages](#pipeline-stages)
 
 ---
 
@@ -589,3 +591,92 @@ ConvertTo-ArchiveMarkdownValue -Value <object>
 $safe = ConvertTo-ArchiveMarkdownValue -Value 'File "My Doc".txt'
 # Returns: File \"My Doc\".txt
 ```
+
+---
+
+## LLM Utilities
+
+### ConvertFrom-ArchiveLlmJson
+
+Extracts the first complete JSON object from an LLM response text. Handles markdown-wrapped JSON, leading/trailing text, and nested braces.
+
+**Syntax:**
+```powershell
+ConvertFrom-ArchiveLlmJson -RawText <string>
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `RawText` | string | Yes | Raw LLM response text (can be empty) |
+
+**Returns:** `[pscustomobject]` or `$null` - Parsed JSON object, or `$null` if no valid JSON found
+
+**Example:**
+```powershell
+$text = 'Here is the result:\n\n{"summary":"test","tags":["tag1"],"vibe":"calm"}\n\nEnd.'
+$parsed = ConvertFrom-ArchiveLlmJson -RawText $text
+# $parsed.summary = "test"
+# $parsed.vibe = "calm"
+```
+
+---
+
+### Invoke-ArchiveLlm
+
+Calls an Ollama-compatible LLM API with structured prompt and returns the parsed JSON response.
+
+**Syntax:**
+```powershell
+Invoke-ArchiveLlm -Endpoint <string> -Model <string> -SystemPrompt <string> -UserPrompt <string> [-TimeoutSeconds <int>]
+```
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `Endpoint` | string | Yes | Ollama API endpoint (e.g., "http://localhost:11434") |
+| `Model` | string | Yes | Model name (e.g., "qwen3:4b") |
+| `SystemPrompt` | string | Yes | System prompt for the LLM |
+| `UserPrompt` | string | Yes | User prompt with file content |
+| `TimeoutSeconds` | int | No | Request timeout (default: 120) |
+
+**Returns:** `[pscustomobject]` with properties:
+- `Success` - `$true` if JSON was parsed successfully
+- `RawText` - Raw LLM response text
+- `Json` - Parsed JSON object (or `$null` on failure)
+- `Error` - Error message (if any)
+
+**Example:**
+```powershell
+$result = Invoke-ArchiveLlm -Endpoint "http://localhost:11434" -Model "qwen3:4b" `
+    -SystemPrompt "You are an archive analyst." `
+    -UserPrompt "File: report.pdf Category: document"
+if ($result.Success) {
+    $summary = $result.Json.summary
+    $tags = $result.Json.tags -join ";"
+}
+```
+
+---
+
+## Pipeline Stages
+
+| Stage | Script | Purpose | Input | Output |
+|-------|--------|---------|-------|--------|
+| 01 | `01-Inventory.ps1` | Scan roots, hash files | Source archive | inventory.csv |
+| 02 | `02-Metadata.ps1` | ExifTool + ffprobe enrichment | inventory.csv | metadata.csv, sidecars/ |
+| 03 | `03-Dedupe.ps1` | Exact + near-duplicate detection | inventory.csv | reports/exact-duplicates.csv |
+| 04 | `04-ExtractText.ps1` | Text extraction, OCR | inventory.csv | extracted/*.md |
+| 05 | `05-TranscribeMedia.ps1` | Audio/video transcription | inventory.csv | transcripts/*.md |
+| 06 | `06-ClassifyThemes.ps1` | LLM classification + vibe | inventory.csv, extracted/, transcripts/ | classification.csv |
+| 07 | `07-BuildKnowledgeBase.ps1` | Markdown vault assembly | All prior outputs | vault/archive-vault/*.md |
+| 08 | `08-ReviewReports.ps1` | Summary + action template | All prior outputs | reports/review-summary.md |
+| 09 | `09-ApplyReviewedActions.ps1` | Execute approved actions | actions-template.csv | reports/applied-actions.csv |
+| 10 | `10-Cleanup.ps1` | Delete intermediate artifacts | extraction-status.csv, transcription-status.csv | reports/cleanup-actions.csv |
+
+### Python Sidecars
+
+| Script | Purpose | Dependencies |
+|--------|---------|--------------|
+| `scripts/python/10_extract_entities.py` | NER using GLiNER2 | gliner2, pyyaml |
+| `scripts/python/11_semantic_search.py` | Vector search via ChromaDB | sentence-transformers, chromadb, pyyaml |

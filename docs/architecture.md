@@ -25,6 +25,8 @@ flowchart LR
   F --> I
   G --> I
   I --> J["09 Apply reviewed actions"]
+  H --> K["10 Cleanup"]
+  I --> K
 ```
 
 ## State
