@@ -52,6 +52,29 @@ pwsh ./scripts/01-Inventory.ps1 -RootPath ./tests/fixtures/source -OutputPath ./
 - `outputs/reports/review-summary.md`
 - `outputs/logs/*.log`
 
+### JSON Lines Format (for streaming ETL)
+
+Generated alongside CSVs in the review stage:
+
+- `outputs/inventory/inventory.jsonl`
+- `outputs/metadata/metadata.jsonl`
+- `outputs/reports/exact-duplicates.jsonl`
+- `outputs/classification/classification.jsonl`
+
+Each line is a self-contained JSON object, suitable for streaming ingestion into Elasticsearch, Splunk, or AWS Kinesis.
+
+**Usage Example:**
+```bash
+# Stream to Elasticsearch
+cat outputs/inventory/inventory.jsonl | curl -s -X POST "localhost:9200/_bulk" -H "Content-Type: application/x-ndjson" -d @-
+```
+
+### Excel Workbook (optional, requires ImportExcel)
+
+- `outputs/reports/archive-summary.xlsx` — Multi-sheet workbook with Inventory, Metadata, Duplicates, and Classification data.
+
+To enable, install the ImportExcel module: `Install-Module ImportExcel -Scope CurrentUser`
+
 ## External Tools
 
 The scripts work in layers. Inventory, metadata fallback, exact duplicate detection, simple text extraction, and knowledge-base generation do not require AI.
@@ -79,6 +102,16 @@ If a run fails, check:
 4. Whether output path is outside the source root.
 
 The scripts are independent. Fix the issue and rerun the failed stage.
+
+## Resume and Recovery (Future Feature)
+
+The `-Resume` parameter is accepted by all pipeline stages but is not yet implemented.
+Currently, if a stage fails:
+
+1. Fix the underlying issue (missing tool, permission error, etc.)
+2. Rerun the stage (it will reprocess all files)
+
+Future versions will support checkpoint saving, incremental processing, and automatic recovery.
 
 ## Exit Codes
 

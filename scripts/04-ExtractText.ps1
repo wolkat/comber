@@ -115,8 +115,8 @@ try {
     }
 
     if (-not $DryRun) {
-        Export-ArchiveCsv -Rows $rows -Path (Join-Path $run.OutputPath "reports/extraction-status.csv")
-        Export-ArchiveCsv -Rows $errors -Path (Join-Path $run.OutputPath "reports/extraction-errors.csv")
+        Export-ArchiveCsv -Rows $rows -Path (Join-Path $run.OutputPath "reports/extraction-status.csv") -Schema @('path','extraction_status','tool','markdown_path','message')
+        Export-ArchiveCsv -Rows $errors -Path (Join-Path $run.OutputPath "reports/extraction-errors.csv") -Schema @('stage','path','error')
     }
 
     Write-ArchiveLog -Run $run -Message "Extraction rows: $($rows.Count)"

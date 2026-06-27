@@ -50,3 +50,27 @@ make build      # Validate expected files exist
 - Fixture pipeline: runs all 8 stages, verifies source files unchanged
 - Unit tests: 18 tests covering common module functions
 - Edge case fixtures in `tests/fixtures/source/edge-cases/`
+
+## Preferred CLI Tools
+
+Prefer these tools over legacy alternatives for better performance and output quality:
+
+| Task | Prefer | Over | Fallback |
+|------|--------|------|----------|
+| File search | `fd` | `find` | `find` (if fd unavailable) |
+| JSON processing | `jq` | `grep/sed` | Python `json.tool` |
+| YAML processing | `yq` | manual parsing | Python `yaml` module |
+| Directory listing | `eza` | `ls` | `ls` (if eza unavailable) |
+| File viewing | `bat` | `cat` | `cat` (if bat unavailable) |
+| Directory tree | `tree` | manual `find` | `find` + formatting |
+| Smart navigation | `zoxide` (`z`) | `cd` + history | `cd` |
+| Fuzzy search | `fzf` | manual grep | `grep` + manual selection |
+| Git diffs | `delta` (auto) | default pager | default pager |
+| Markdown preview | `glow` | `cat` | `cat` |
+| HTTP requests | `http` (httpie) | `curl` | `curl` |
+| Code statistics | `tokei` | `cloc`, `scc` | `wc -l` |
+| Simplified man | `tldr` | `man` | `man` |
+
+**When writing scripts:** Check tool availability with `command -v <tool>` before using. Provide fallbacks for portability.
+
+**Full documentation:** `docs/cli-tools-2026-06-20.md` (install script, examples, troubleshooting)

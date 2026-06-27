@@ -48,6 +48,7 @@ All commits must carry a `Signed-off-by` trailer (yours) and `Co-authored-by` tr
 - ExifTool (optional, for richer metadata)
 - FFmpeg (optional, for media)
 - Tesseract (optional, for OCR)
+- ImportExcel module (optional, for XLSX export): `Install-Module ImportExcel -Scope CurrentUser`
 
 ### Initial Setup
 
@@ -55,6 +56,12 @@ All commits must carry a `Signed-off-by` trailer (yours) and `Co-authored-by` tr
 # Clone the repository
 git clone https://github.com/wolkat/comber.git
 cd comber
+
+# Check dependencies
+make setup
+
+# Enable pre-commit hooks (catches syntax errors before commit)
+chmod +x .git/hooks/pre-commit
 
 # Run static checks
 make lint

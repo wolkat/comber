@@ -213,8 +213,8 @@ function Test-ArchiveConfigSchema {
         if ($Config.classification.PSObject.Properties.Name -contains "maxChars" -and $Config.classification.maxChars -lt 1) {
             $errors += "classification.maxChars must be positive"
         }
-        if ($Config.classification.PSObject.Properties.Name -contains "ollamaEndpoint" -and $Config.classification.ollamaEndpoint -and -not ($Config.classification.ollamaEndpoint -is [string])) {
-            $errors += "classification.ollamaEndpoint must be a string"
+        if ($Config.classification.PSObject.Properties.Name -contains "endpoint" -and $Config.classification.endpoint -and -not ($Config.classification.endpoint -is [string])) {
+            $errors += "classification.endpoint must be a string"
         }
         if ($Config.classification.PSObject.Properties.Name -contains "systemPrompt" -and $Config.classification.systemPrompt -and -not ($Config.classification.systemPrompt -is [string])) {
             $errors += "classification.systemPrompt must be a string"
@@ -365,6 +365,11 @@ function New-ArchiveRun {
         }
     }
 
+    $schemaResult = Test-ArchiveConfigSchema -Config $config -ConfigPath $configInfo.Path
+    if (-not $schemaResult.Valid) {
+        throw (New-ArchiveError -Category ([ArchiveErrorCategory]::ConfigError) -Message "Config validation failed: $($schemaResult.Errors -join '; ')" -Path $configInfo.Path -Stage $ScriptName)
+    }
+
     $rootCandidate = $RootPath
     if ([string]::IsNullOrWhiteSpace($rootCandidate)) {
         if ($config.archiveRoots -and $config.archiveRoots.Count -gt 0) {
@@ -508,7 +513,8 @@ function Stop-ArchiveTimer {
 function Export-ArchiveCsv {
     param(
         [Parameter(Mandatory = $true)]$Rows,
-        [Parameter(Mandatory = $true)][string]$Path
+        [Parameter(Mandatory = $true)][string]$Path,
+        [string[]]$Schema = @()
     )
 
     $parent = Split-Path -Parent $Path
@@ -522,7 +528,13 @@ function Export-ArchiveCsv {
     }
 
     if ($items.Count -eq 0) {
-        "" | Set-Content -LiteralPath $Path -Encoding UTF8
+        if ($Schema.Count -gt 0) {
+            $headerLine = ($Schema | ForEach-Object { "`"$_`"" }) -join ","
+            $headerLine | Set-Content -LiteralPath $Path -Encoding UTF8
+        }
+        else {
+            "" | Set-Content -LiteralPath $Path -Encoding UTF8
+        }
         return
     }
 
@@ -923,6 +935,133 @@ function Compare-ArchivePerceptualHash {
     return [double]($diffBits) / 64
 }
 
+function Assert-ArchiveCommandSuccess {
+    param(
+        [Parameter(Mandatory = $true)][object]$Result,
+        [Parameter(Mandatory = $true)][string]$ToolName,
+        [string]$Stage = ""
+    )
+
+    if (-not $Result.Available) {
+        throw (New-ArchiveError -Category ([ArchiveErrorCategory]::ToolError) `
+            -Message "$ToolName is not available: $($Result.Error)" `
+            -Stage $Stage -Recoverable $false)
+    }
+
+    if ($Result.ExitCode -ne 0) {
+        throw (New-ArchiveError -Category ([ArchiveErrorCategory]::ToolError) `
+            -Message "$ToolName failed (exit $($Result.ExitCode)): $(if ($Result.Error) { $Result.Error } else { $Result.Output })" `
+            -Stage $Stage -Recoverable $false)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Result.Output)) {
+        throw (New-ArchiveError -Category ([ArchiveErrorCategory]::ToolError) `
+            -Message "$ToolName returned empty output" `
+            -Stage $Stage -Recoverable $false)
+    }
+}
+
+function Export-ArchiveJsonLines {
+    param(
+        [Parameter(Mandatory = $true)][string]$CsvPath,
+        [Parameter(Mandatory = $true)][string]$OutputPath
+    )
+
+    $parent = Split-Path -Parent $OutputPath
+    Ensure-ArchiveDirectory -Path $parent
+
+    $rows = @(Import-ArchiveCsv -Path $CsvPath)
+    if ($rows.Count -eq 0) {
+        if (Test-Path -LiteralPath $OutputPath) {
+            Remove-Item -LiteralPath $OutputPath -Force
+        }
+        return
+    }
+
+    $ndjson = $rows | ForEach-Object { $_ | ConvertTo-Json -Compress }
+    $ndjson | Set-Content -LiteralPath $OutputPath -Encoding UTF8
+}
+
+function Export-ArchiveJsonLinesStream {
+    param(
+        [Parameter(Mandatory = $true)][string]$CsvPath,
+        [Parameter(Mandatory = $true)][string]$OutputPath
+    )
+
+    $parent = Split-Path -Parent $OutputPath
+    Ensure-ArchiveDirectory -Path $parent
+
+    $rows = @(Import-ArchiveCsv -Path $CsvPath)
+    if ($rows.Count -eq 0) {
+        if (Test-Path -LiteralPath $OutputPath) {
+            Remove-Item -LiteralPath $OutputPath -Force
+        }
+        return
+    }
+
+    $writer = [System.IO.StreamWriter]::new($OutputPath, $false, [System.Text.Encoding]::UTF8)
+    try {
+        foreach ($row in $rows) {
+            $line = $row | ConvertTo-Json -Compress
+            $writer.WriteLine($line)
+        }
+    }
+    finally {
+        $writer.Dispose()
+    }
+}
+
+function Export-ArchiveExcel {
+    param(
+        [Parameter(Mandatory = $true)][hashtable]$Sheets,
+        [Parameter(Mandatory = $true)][string]$OutputPath
+    )
+
+    $parent = Split-Path -Parent $OutputPath
+    Ensure-ArchiveDirectory -Path $parent
+
+    if (-not (Get-Module ImportExcel -ErrorAction SilentlyContinue)) {
+        throw (New-ArchiveError -Category ([ArchiveErrorCategory]::ToolError) `
+            -Message "ImportExcel module required. Install: Install-Module ImportExcel -Scope CurrentUser" `
+            -Stage "Export-ArchiveExcel")
+    }
+
+    $excel = $null
+    try {
+        foreach ($sheetName in $Sheets.Keys) {
+            $csv = $Sheets[$sheetName]
+            if (-not (Test-Path -LiteralPath $csv)) {
+                Write-Warning "CSV not found for sheet '$sheetName': $csv"
+                continue
+            }
+            $rows = @(Import-ArchiveCsv -Path $csv)
+            if ($rows.Count -eq 0) {
+                continue
+            }
+
+            if ($null -eq $excel) {
+                $excel = $rows | Export-Excel -Path $OutputPath -WorksheetName $sheetName -PassThru
+            }
+            else {
+                $rows | Export-Excel -ExcelPackage $excel -WorksheetName $sheetName
+            }
+        }
+
+        if ($null -ne $excel) {
+            $excel.Save()
+            $excel.Dispose()
+        }
+    }
+    catch {
+        if ($null -ne $excel) {
+            try { $excel.Dispose() } catch { }
+        }
+        throw (New-ArchiveError -Category ([ArchiveErrorCategory]::ToolError) `
+            -Message "Failed to export Excel: $($_.Exception.Message)" `
+            -Stage "Export-ArchiveExcel")
+    }
+}
+
 Export-ModuleMember -Function @(
     'New-ArchiveError', 'Invoke-ArchiveRetry', 'Write-ArchiveMetrics',
     'Start-ArchiveTimer', 'Stop-ArchiveTimer', 'Test-ArchiveConfigSchema',
@@ -934,6 +1073,8 @@ Export-ModuleMember -Function @(
     'Get-ArchiveHash', 'Get-ArchiveSafeStem', 'Test-ArchiveExcluded',
     'Test-ArchiveCommand', 'Get-ArchiveToolVersion',
     'Invoke-ArchiveConfiguredCommand', 'ConvertTo-ArchiveMarkdownValue',
+    'Assert-ArchiveCommandSuccess',
+    'Export-ArchiveJsonLines', 'Export-ArchiveJsonLinesStream', 'Export-ArchiveExcel',
     'Get-ArchivePerceptualHash', 'Compress-ArchivePerceptualHash', 'Compare-ArchivePerceptualHash',
     'Test-ArchiveSystemPath', 'Test-PathInside'
 )

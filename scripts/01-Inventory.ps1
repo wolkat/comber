@@ -88,8 +88,8 @@ try {
         Write-ArchiveLog -Run $run -Message "Dry run: inventory would contain $($rows.Count) rows"
     }
     else {
-        Export-ArchiveCsv -Rows $rows -Path $inventoryPath
-        Export-ArchiveCsv -Rows $errors -Path $errorsPath
+        Export-ArchiveCsv -Rows $rows -Path $inventoryPath -Schema @('path','relative_path','parent','name','extension','category','length_bytes','created_utc','modified_utc','accessed_utc','hash_algorithm','hash','hash_status')
+        Export-ArchiveCsv -Rows $errors -Path $errorsPath -Schema @('stage','path','error')
         Write-ArchiveLog -Run $run -Message "Wrote $inventoryPath"
         Write-ArchiveLog -Run $run -Message "Wrote $errorsPath"
     }

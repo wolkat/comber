@@ -53,13 +53,49 @@ try {
         ""
         "## Safety"
         ""
-        "No files have been deleted or moved by reports. Review `actions-template.csv` before using `09-ApplyReviewedActions.ps1`."
+        "No files have been deleted or moved by reports. Review ``actions-template.csv`` before using ``09-ApplyReviewedActions.ps1``."
     ) -join [Environment]::NewLine
 
     if (-not $DryRun) {
         $summary | Set-Content -LiteralPath (Join-Path $run.OutputPath "reports/review-summary.md") -Encoding UTF8
         $actionRows = @($actionRows | Where-Object { $_ -ne $null })
-        Export-ArchiveCsv -Rows $actionRows -Path (Join-Path $run.OutputPath "reports/actions-template.csv")
+        Export-ArchiveCsv -Rows $actionRows -Path (Join-Path $run.OutputPath "reports/actions-template.csv") -Schema @('approved','action','path','destination','reason')
+
+        # Export JSON Lines for streaming ETL integration
+        $csvExports = @(
+            @{ Csv = "inventory/inventory.csv"; Jsonl = "inventory/inventory.jsonl" }
+            @{ Csv = "metadata/metadata.csv"; Jsonl = "metadata/metadata.jsonl" }
+            @{ Csv = "reports/exact-duplicates.csv"; Jsonl = "reports/exact-duplicates.jsonl" }
+            @{ Csv = "classification/classification.csv"; Jsonl = "classification/classification.jsonl" }
+        )
+        foreach ($export in $csvExports) {
+            $csvPath = Join-Path $run.OutputPath $export.Csv
+            $jsonlPath = Join-Path $run.OutputPath $export.Jsonl
+            if (Test-Path -LiteralPath $csvPath) {
+                Export-ArchiveJsonLinesStream -CsvPath $csvPath -OutputPath $jsonlPath
+            }
+        }
+
+        # Export multi-sheet XLSX if ImportExcel is available
+        if (Get-Module ImportExcel -ErrorAction SilentlyContinue) {
+            try {
+                $xlsxSheets = @{}
+                foreach ($export in $csvExports) {
+                    $csvPath = Join-Path $run.OutputPath $export.Csv
+                    if (Test-Path -LiteralPath $csvPath) {
+                        $sheetName = [System.IO.Path]::GetFileNameWithoutExtension($export.Csv)
+                        $xlsxSheets[$sheetName] = $csvPath
+                    }
+                }
+                if ($xlsxSheets.Count -gt 0) {
+                    Export-ArchiveExcel -Sheets $xlsxSheets -OutputPath (Join-Path $run.OutputPath "reports/archive-summary.xlsx")
+                    Write-ArchiveLog -Run $run -Message "Created Excel summary: archive-summary.xlsx"
+                }
+            }
+            catch {
+                Write-ArchiveLog -Run $run -Message "Excel export skipped: $($_.Exception.Message)" -Level "WARN"
+            }
+        }
     }
 
     Write-ArchiveLog -Run $run -Message "Review summary generated"

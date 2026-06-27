@@ -51,6 +51,7 @@ try {
 
     $nearDuplicateRows = New-Object System.Collections.Generic.List[object]
     $nearDuplicateStatus = @()
+    $errors = New-Object System.Collections.Generic.List[object]
 
     if ($enableNearDup) {
         $imageExtensions = @(".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".tif", ".tiff", ".bmp")
@@ -164,27 +165,33 @@ try {
                 $czkawkaText = ($czkawkaOutput -join [Environment]::NewLine)
 
                 if ($czkawkaExit -eq 0) {
-                    Write-ArchiveLog -Run $run -Message "Czkawka completed successfully."
-                    $czkawkaLines = $czkawkaText -split [Environment]::NewLine | Where-Object {
-                        $_ -match '\.(jpg|jpeg|png|gif|webp|heic|tif|tiff|bmp|mp4|mov|mkv)' -and $_ -match '-->'
+                    if ([string]::IsNullOrWhiteSpace($czkawkaText)) {
+                        Write-ArchiveLog -Run $run -Message "Czkawka returned empty output" -Level "WARN"
                     }
-                    $czkawkaGroupId = $groupId + $nearDuplicateRows.Count
-                    foreach ($line in $czkawkaLines) {
-                        $parts = $line -split '-->' | ForEach-Object { $_.Trim() }
-                        if ($parts.Count -ge 2) {
-                            $czkawkaGroupId += 1
-                            $nearDuplicateRows.Add([pscustomobject]@{
-                                duplicate_group_id = "czkawka-$czkawkaGroupId"
-                                path = $parts[0]
-                                compared_path = $parts[$parts.Count - 1]
-                                method = "czkawka_image_similarity"
-                                distance = ""
-                                confidence = "medium"
-                                recommended_action = "review_near_duplicate_candidate"
-                            })
+                    else {
+                        Write-ArchiveLog -Run $run -Message "Czkawka completed successfully."
+                        $czkawkaLines = $czkawkaText -split [Environment]::NewLine | Where-Object {
+                            $_ -match '\.(jpg|jpeg|png|gif|webp|heic|tif|tiff|bmp|mp4|mov|mkv)' -and $_ -match '-->'
+                        }
+                        $czkawkaGroupId = $groupId + $nearDuplicateRows.Count
+                        foreach ($line in $czkawkaLines) {
+                            $parts = $line -split '-->' | ForEach-Object { $_.Trim() }
+                            if ($parts.Count -ge 2) {
+                                $czkawkaGroupId += 1
+                                $nearDuplicateRows.Add([pscustomobject]@{
+                                    duplicate_group_id = "czkawka-$czkawkaGroupId"
+                                    path = $parts[0]
+                                    compared_path = $parts[$parts.Count - 1]
+                                    method = "czkawka_image_similarity"
+                                    distance = ""
+                                    confidence = "medium"
+                                    recommended_action = "review_near_duplicate_candidate"
+                                })
+                            }
                         }
                     }
-                } else {
+                }
+                else {
                     Write-ArchiveLog -Run $run -Message "Czkawka exited with code $czkawkaExit" -Level "WARN"
                 }
 
@@ -197,6 +204,7 @@ try {
             }
             catch {
                 Write-ArchiveLog -Run $run -Message "Czkawka invocation failed: $($_.Exception.Message)" -Level "WARN"
+                $errors.Add((New-ArchiveError -Category ([ArchiveErrorCategory]::ToolError) -Message "Czkawka failed: $($_.Exception.Message)" -Stage "03-Dedupe"))
                 $nearDuplicateStatus += [pscustomobject]@{
                     method = "czkawka_image_similarity"
                     tool = $czkawkaTemplate.command
@@ -222,15 +230,16 @@ try {
     }
 
     if (-not $DryRun) {
-        Export-ArchiveCsv -Rows $duplicateRows -Path (Join-Path $run.OutputPath "reports/exact-duplicates.csv")
+        Export-ArchiveCsv -Rows $duplicateRows -Path (Join-Path $run.OutputPath "reports/exact-duplicates.csv") -Schema @('duplicate_group_id','path','compared_path','method','distance','confidence','recommended_action')
         if ($nearDuplicateRows.Count -gt 0) {
-            Export-ArchiveCsv -Rows $nearDuplicateRows -Path (Join-Path $run.OutputPath "reports/near-duplicates.csv")
+            Export-ArchiveCsv -Rows $nearDuplicateRows -Path (Join-Path $run.OutputPath "reports/near-duplicates.csv") -Schema @('duplicate_group_id','path','compared_path','method','distance','confidence','recommended_action')
         }
-        Export-ArchiveCsv -Rows $nearDuplicateStatus -Path (Join-Path $run.OutputPath "reports/near-duplicate-status.csv")
+        Export-ArchiveCsv -Rows $nearDuplicateStatus -Path (Join-Path $run.OutputPath "reports/near-duplicate-status.csv") -Schema @('path','status','message')
     }
 
     Write-ArchiveLog -Run $run -Message "Exact duplicate rows: $($duplicateRows.Count)"
     Write-ArchiveLog -Run $run -Message "Near-duplicate rows: $($nearDuplicateRows.Count)"
+    if ($errors.Count -gt 0) { exit 3 }
     exit 0
 }
 catch {

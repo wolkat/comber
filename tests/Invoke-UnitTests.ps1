@@ -239,6 +239,116 @@ catch {
     Add-TestResult -TestName "Test-ArchiveConfigSchema" -Passed $false -Message $_.Exception.Message
 }
 
+# Test Assert-ArchiveCommandSuccess
+try {
+    # Successful result should not throw
+    $goodResult = [pscustomobject]@{ Available = $true; ExitCode = 0; Output = "some data"; Error = "" }
+    Assert-ArchiveCommandSuccess -Result $goodResult -ToolName "testtool" -Stage "Test"
+    Add-TestResult -TestName "Assert-ArchiveCommandSuccess (success)" -Passed $true
+
+    # Unavailable tool should throw
+    $badResult = [pscustomobject]@{ Available = $false; ExitCode = 2; Output = ""; Error = "not found" }
+    try {
+        Assert-ArchiveCommandSuccess -Result $badResult -ToolName "testtool" -Stage "Test"
+        Add-TestResult -TestName "Assert-ArchiveCommandSuccess (unavailable)" -Passed $false -Message "Should have thrown"
+    }
+    catch {
+        Add-TestResult -TestName "Assert-ArchiveCommandSuccess (unavailable)" -Passed ($_.Exception.Message -match "not available")
+    }
+
+    # Non-zero exit should throw
+    $failResult = [pscustomobject]@{ Available = $true; ExitCode = 1; Output = ""; Error = "failed" }
+    try {
+        Assert-ArchiveCommandSuccess -Result $failResult -ToolName "testtool" -Stage "Test"
+        Add-TestResult -TestName "Assert-ArchiveCommandSuccess (exit code)" -Passed $false -Message "Should have thrown"
+    }
+    catch {
+        Add-TestResult -TestName "Assert-ArchiveCommandSuccess (exit code)" -Passed ($_.Exception.Message -match "failed")
+    }
+
+    # Empty output should throw
+    $emptyResult = [pscustomobject]@{ Available = $true; ExitCode = 0; Output = ""; Error = "" }
+    try {
+        Assert-ArchiveCommandSuccess -Result $emptyResult -ToolName "testtool" -Stage "Test"
+        Add-TestResult -TestName "Assert-ArchiveCommandSuccess (empty output)" -Passed $false -Message "Should have thrown"
+    }
+    catch {
+        Add-TestResult -TestName "Assert-ArchiveCommandSuccess (empty output)" -Passed ($_.Exception.Message -match "empty output")
+    }
+}
+catch {
+    Add-TestResult -TestName "Assert-ArchiveCommandSuccess" -Passed $false -Message $_.Exception.Message
+}
+
+# Test Export-ArchiveJsonLines
+try {
+    $testDir = Join-Path "/tmp" "comber-test-$(Get-Random)"
+    Ensure-ArchiveDirectory -Path $testDir
+
+    # Create a test CSV
+    $csvPath = Join-Path $testDir "test.csv"
+    $csvContent = "path,name`n/a.txt,a.txt`n/b.txt,b.txt"
+    $csvContent | Set-Content -LiteralPath $csvPath -Encoding UTF8
+
+    # Export as JSON Lines
+    $jsonlPath = Join-Path $testDir "test.jsonl"
+    Export-ArchiveJsonLines -CsvPath $csvPath -OutputPath $jsonlPath
+
+    $lines = @(Get-Content -LiteralPath $jsonlPath)
+    $correctCount = $lines.Count -eq 2
+    $validJson = ($lines[0] | ConvertFrom-Json).path -eq "/a.txt"
+    Add-TestResult -TestName "Export-ArchiveJsonLines" -Passed ($correctCount -and $validJson) -Message "Lines: $($lines.Count)"
+
+    # Export empty CSV
+    $emptyCsvPath = Join-Path $testDir "empty.csv"
+    "" | Set-Content -LiteralPath $emptyCsvPath -Encoding UTF8
+    $emptyJsonlPath = Join-Path $testDir "empty.jsonl"
+    Export-ArchiveJsonLines -CsvPath $emptyCsvPath -OutputPath $emptyJsonlPath
+    $emptyExists = Test-Path -LiteralPath $emptyJsonlPath
+    Add-TestResult -TestName "Export-ArchiveJsonLines (empty)" -Passed (-not $emptyExists)
+
+    Remove-Item -LiteralPath $testDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+catch {
+    Add-TestResult -TestName "Export-ArchiveJsonLines" -Passed $false -Message $_.Exception.Message
+}
+
+# Test Export-ArchiveCsv empty round-trip
+try {
+    $testDir = Join-Path "/tmp" "comber-test-$(Get-Random)"
+    Ensure-ArchiveDirectory -Path $testDir
+
+    # Export empty list with schema -> should produce header-only CSV
+    $schema = @('path','relative_path','parent','name','extension','category','length_bytes','created_utc','modified_utc','accessed_utc','hash_algorithm','hash','hash_status')
+    $emptyCsvPath = Join-Path $testDir "empty-with-schema.csv"
+    Export-ArchiveCsv -Rows @() -Path $emptyCsvPath -Schema $schema
+    $imported = @(Import-ArchiveCsv -Path $emptyCsvPath)
+    $hasHeaders = $imported.Count -eq 0 -and (Get-Content -LiteralPath $emptyCsvPath -Raw) -match 'path'
+    Add-TestResult -TestName "Export-ArchiveCsv (empty with schema)" -Passed $hasHeaders -Message "Rows: $($imported.Count)"
+
+    # Export empty list without schema -> old behavior (blank file)
+    $emptyNoSchemaPath = Join-Path $testDir "empty-no-schema.csv"
+    Export-ArchiveCsv -Rows @() -Path $emptyNoSchemaPath
+    $imported2 = @(Import-ArchiveCsv -Path $emptyNoSchemaPath)
+    $blankOk = $imported2.Count -eq 0
+    Add-TestResult -TestName "Export-ArchiveCsv (empty without schema)" -Passed $blankOk -Message "Rows: $($imported2.Count)"
+
+    # Round-trip: export empty with schema, import, re-export, verify headers present
+    $roundTripPath = Join-Path $testDir "roundtrip.csv"
+    Export-ArchiveCsv -Rows @() -Path $roundTripPath -Schema $schema
+    $reimported = @(Import-ArchiveCsv -Path $roundTripPath)
+    $reexportPath = Join-Path $testDir "reexport.csv"
+    Export-ArchiveCsv -Rows $reimported -Path $reexportPath -Schema $schema
+    $reimported2 = @(Import-ArchiveCsv -Path $reexportPath)
+    $roundTripOk = $reimported2.Count -eq 0 -and (Get-Content -LiteralPath $reexportPath -Raw) -match 'path'
+    Add-TestResult -TestName "Export-ArchiveCsv (empty round-trip)" -Passed $roundTripOk -Message "Reimported: $($reimported2.Count)"
+
+    Remove-Item -LiteralPath $testDir -Recurse -Force -ErrorAction SilentlyContinue
+}
+catch {
+    Add-TestResult -TestName "Export-ArchiveCsv (empty round-trip)" -Passed $false -Message $_.Exception.Message
+}
+
 # Test ConvertFrom-ArchiveLlmJson
 try {
     $result = ConvertFrom-ArchiveLlmJson -RawText '{"summary":"test","tags":["a","b"],"vibe":"cool"}'

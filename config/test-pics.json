@@ -1,8 +1,8 @@
 {
   "archiveRoots": [
-    "./tests/fixtures/source"
+    "/Users/katops/git/test_pics"
   ],
-  "outputPath": "./outputs",
+  "outputPath": "./outputs/test-pics",
   "privacyMode": "local-first",
   "ocrLanguages": [
     "eng"
@@ -54,8 +54,8 @@
     }
   },
   "metadata": {
-    "enableExifTool": true,
-    "enableMediaProbe": false,
+    "enableExifTool": false,
+    "enableMediaProbe": true,
     "exifToolJson": {
       "command": "exiftool",
       "arguments": [

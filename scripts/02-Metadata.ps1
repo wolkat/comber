@@ -146,25 +146,17 @@ try {
 
         if ($enableExifTool -and $run.Config.metadata.exifToolJson) {
             $result = Invoke-ArchiveConfiguredCommand -Template $run.Config.metadata.exifToolJson -Path $item.path
-            if ($result.Available -and $result.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($result.Output)) {
-                try {
-                    $parsed = $result.Output | ConvertFrom-Json -Depth 50
-                    if (@($parsed).Count -gt 0) {
-                        $exifData = @($parsed)[0]
-                        $metadataStatus = "exiftool_ok"
-                    }
-                }
-                catch {
-                    $metadataStatus = "exiftool_parse_error"
-                    $errors.Add([pscustomobject]@{ stage = "02-Metadata"; path = $item.path; error = $_.Exception.Message })
+            try {
+                Assert-ArchiveCommandSuccess -Result $result -ToolName "exiftool" -Stage "02-Metadata"
+                $parsed = $result.Output | ConvertFrom-Json -Depth 50
+                if (@($parsed).Count -gt 0) {
+                    $exifData = @($parsed)[0]
+                    $metadataStatus = "exiftool_ok"
                 }
             }
-            elseif (-not $result.Available) {
-                $metadataStatus = "exiftool_missing"
-            }
-            elseif ($result.ExitCode -ne 0) {
-                $metadataStatus = "exiftool_error"
-                $errors.Add([pscustomobject]@{ stage = "02-Metadata"; path = $item.path; error = $result.Output + $result.Error })
+            catch {
+                $metadataStatus = if (-not $result.Available) { "exiftool_missing" } elseif ($result.ExitCode -ne 0) { "exiftool_error" } else { "exiftool_parse_error" }
+                $errors.Add([pscustomobject]@{ stage = "02-Metadata"; path = $item.path; error = $_.Exception.Message })
             }
         }
 
@@ -214,8 +206,8 @@ try {
     }
 
     if (-not $DryRun) {
-        Export-ArchiveCsv -Rows $rows -Path (Join-Path $run.OutputPath "metadata/metadata.csv")
-        Export-ArchiveCsv -Rows $errors -Path (Join-Path $run.OutputPath "metadata/metadata-errors.csv")
+        Export-ArchiveCsv -Rows $rows -Path (Join-Path $run.OutputPath "metadata/metadata.csv") -Schema @('path','metadata_status','media_subtype','sidecar_path')
+        Export-ArchiveCsv -Rows $errors -Path (Join-Path $run.OutputPath "metadata/metadata-errors.csv") -Schema @('stage','path','error')
     }
 
     Write-ArchiveLog -Run $run -Message "Processed metadata rows: $($rows.Count)"

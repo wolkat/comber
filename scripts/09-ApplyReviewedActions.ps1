@@ -98,7 +98,7 @@ try {
         }
     }
 
-    Export-ArchiveCsv -Rows $results -Path (Join-Path $run.OutputPath "reports/applied-actions.csv")
+    Export-ArchiveCsv -Rows $results -Path (Join-Path $run.OutputPath "reports/applied-actions.csv") -Schema @('path','action','status','message')
     Write-ArchiveLog -Run $run -Message "Reviewed actions processed: $($results.Count)"
     exit 0
 }

@@ -62,22 +62,20 @@ function Get-FileContentForLlm {
 function Get-ClassificationConfig {
     param($Config)
 
-    if (-not $Config.classification) {
-        return [pscustomobject]@{
-            Enabled = $false
-            Model = "qwen3:4b"
-            MaxChars = 6000
-            Endpoint = "http://localhost:11434"
-            SystemPrompt = "You are an archive analyst. Categorize the following file content."
-        }
+    $classification = $Config.classification
+    $enabled = if ($classification) { [bool]$classification.enabled } else { $false }
+
+    if ($enabled) {
+        if (-not $classification.model) { throw "classification.model is required when classification is enabled" }
+        if (-not $classification.endpoint) { throw "classification.endpoint is required when classification is enabled" }
     }
 
     return [pscustomobject]@{
-        Enabled = [bool]$Config.classification.enabled
-        Model = if ($Config.classification.model) { [string]$Config.classification.model } else { "qwen3:4b" }
-        MaxChars = if ($Config.classification.maxChars) { [int]$Config.classification.maxChars } else { 6000 }
-        Endpoint = if ($Config.classification.ollamaEndpoint) { [string]$Config.classification.ollamaEndpoint } else { "http://localhost:11434" }
-        SystemPrompt = if ($Config.classification.systemPrompt) { [string]$Config.classification.systemPrompt } else { "You are an archive analyst. Categorize the following file content." }
+        Enabled = $enabled
+        Model = if ($classification -and $classification.PSObject.Properties.Name -contains "model") { [string]$classification.model } else { "" }
+        MaxChars = if ($classification -and $classification.PSObject.Properties.Name -contains "maxChars") { [int]$classification.maxChars } else { 6000 }
+        Endpoint = if ($classification -and $classification.PSObject.Properties.Name -contains "endpoint") { [string]$classification.endpoint } else { "" }
+        SystemPrompt = if ($classification -and $classification.PSObject.Properties.Name -contains "systemPrompt") { [string]$classification.systemPrompt } else { "You are an archive analyst. Categorize file content into themes and extract keywords." }
     }
 }
 
@@ -114,14 +112,21 @@ try {
             $result = Invoke-ArchiveLlm -Endpoint $classCfg.Endpoint -Model $classCfg.Model -SystemPrompt $classCfg.SystemPrompt -UserPrompt $userPrompt
             if ($result.Success -and $result.Json) {
                 $parsed = $result.Json
-                $summary = if ($parsed.summary) { [string]$parsed.summary } else { $summary }
-                $vibe = if ($parsed.vibe) { [string]$parsed.vibe } else { "" }
-                if ($parsed.tags -and @($parsed.tags).Count -gt 0) {
-                    $tags = ($parsed.tags | ForEach-Object { [string]$_ } | Select-Object -Unique) -join ";"
+                if (-not ($parsed.PSObject.Properties.Name -contains "summary")) {
+                    $status = "llm_invalid_schema"
+                    $reason = "LLM response missing required 'summary' field."
+                    $errors.Add([pscustomobject]@{ stage = "06-ClassifyThemes"; path = $item.path; error = $reason })
                 }
-                $confidence = "medium"
-                $status = "llm_structured"
-                $reason = "LLM classification with structured JSON response."
+                else {
+                    $summary = if ($parsed.summary) { [string]$parsed.summary } else { $summary }
+                    $vibe = if ($parsed.vibe) { [string]$parsed.vibe } else { "" }
+                    if ($parsed.tags -and @($parsed.tags).Count -gt 0) {
+                        $tags = ($parsed.tags | ForEach-Object { [string]$_ } | Select-Object -Unique) -join ";"
+                    }
+                    $confidence = "medium"
+                    $status = "llm_structured"
+                    $reason = "LLM classification with structured JSON response."
+                }
             }
             else {
                 $status = "llm_failed"
@@ -144,8 +149,8 @@ try {
     }
 
     if (-not $DryRun) {
-        Export-ArchiveCsv -Rows $rows -Path (Join-Path $run.OutputPath "classification/classification.csv")
-        Export-ArchiveCsv -Rows $errors -Path (Join-Path $run.OutputPath "classification/classification-errors.csv")
+        Export-ArchiveCsv -Rows $rows -Path (Join-Path $run.OutputPath "classification/classification.csv") -Schema @('path','category','tags','vibe','theme','summary','confidence','status','reason')
+        Export-ArchiveCsv -Rows $errors -Path (Join-Path $run.OutputPath "classification/classification-errors.csv") -Schema @('stage','path','error')
     }
 
     Write-ArchiveLog -Run $run -Message "Classification rows: $($rows.Count)"

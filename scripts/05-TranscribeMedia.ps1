@@ -68,8 +68,8 @@ try {
     }
 
     if (-not $DryRun) {
-        Export-ArchiveCsv -Rows $rows -Path (Join-Path $run.OutputPath "reports/transcription-status.csv")
-        Export-ArchiveCsv -Rows $errors -Path (Join-Path $run.OutputPath "reports/transcription-errors.csv")
+        Export-ArchiveCsv -Rows $rows -Path (Join-Path $run.OutputPath "reports/transcription-status.csv") -Schema @('path','transcription_status','tool','transcript_path','message')
+        Export-ArchiveCsv -Rows $errors -Path (Join-Path $run.OutputPath "reports/transcription-errors.csv") -Schema @('stage','path','error')
     }
 
     Write-ArchiveLog -Run $run -Message "Media rows: $($media.Count)"

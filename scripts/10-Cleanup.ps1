@@ -173,7 +173,7 @@ try {
         }
     }
 
-    Export-ArchiveCsv -Rows $results -Path (Join-Path $run.OutputPath "reports/cleanup-actions.csv")
+    Export-ArchiveCsv -Rows $results -Path (Join-Path $run.OutputPath "reports/cleanup-actions.csv") -Schema @('path','action','status','message')
     Write-ArchiveLog -Run $run -Message "Cleanup actions processed: $($results.Count)"
 
     $errors = @($results | Where-Object { $_.status -eq "error" })
